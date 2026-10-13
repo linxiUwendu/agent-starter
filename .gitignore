@@ -1,0 +1,9 @@
+node_modules/
+.env
+backend/dist/
+frontend/dist/
+data/*
+!data/travel.db
+!data/README.md
+*.tsbuildinfo
+.DS_Store

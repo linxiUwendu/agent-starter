@@ -1,0 +1,24 @@
+{
+  "name": "agent-starter",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Cursor agent chat app with NestJS + Vue 3",
+  "workspaces": [
+    "backend",
+    "frontend"
+  ],
+  "scripts": {
+    "dev": "concurrently -n backend,frontend -c blue,green \"npm run dev -w backend\" \"npm run dev -w frontend\"",
+    "build": "npm run build -w frontend && npm run build -w backend",
+    "start": "npm run start:prod -w backend",
+    "test": "npm run test -w backend",
+    "test:e2e": "playwright test",
+    "db:init": "npm run db:init -w backend",
+    "docker:up": "docker compose up --build",
+    "docker:down": "docker compose down"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.55.0",
+    "concurrently": "^9.2.1"
+  }
+}

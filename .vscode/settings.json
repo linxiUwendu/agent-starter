@@ -1,0 +1,18 @@
+{
+  // Vue 3 项目请使用 Vue - Official (Volar)，勿用 Vetur（不支持 script setup / defineProps）
+  "typescript.tsdk": "node_modules/typescript/lib",
+  "typescript.enablePromptUseWorkspaceTsdk": true,
+  "vetur.validation.template": false,
+  "vetur.validation.script": false,
+  "vetur.validation.style": false,
+  "vetur.validation.interpolation": false,
+  "vue.inlayHints.missingProps": false,
+  "vue.server.configFilePath": "frontend/tsconfig.json",
+  "vue.server.include": ["frontend/src/**/*"],
+  "files.associations": {
+    "*.vue": "vue"
+  },
+  "[vue]": {
+    "editor.defaultFormatter": "Vue.volar"
+  }
+}

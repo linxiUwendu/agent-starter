@@ -1,0 +1,17 @@
+services:
+  app:
+    build: .
+    ports:
+      - "${PORT:-3000}:3000"
+    environment:
+      MOCK_AGENT: "${MOCK_AGENT:-true}"
+      HOST: "0.0.0.0"
+      PORT: "3000"
+      TRAVEL_DB_PATH: "/app/data/travel.db"
+      RAG_EMBEDDING_PROVIDER: "${RAG_EMBEDDING_PROVIDER:-tfidf}"
+    volumes:
+      - travel-data:/app/data
+    restart: unless-stopped
+
+volumes:
+  travel-data:

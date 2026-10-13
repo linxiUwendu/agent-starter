@@ -1,0 +1,42 @@
+import {
+  mockAgentToolStep,
+  parseAgentToolStep,
+  summarizeToolResult,
+} from "./travel-tools.util";
+
+describe("travel-tools.util", () => {
+  it("parses tool_calls JSON", () => {
+    const step = parseAgentToolStep(
+      '{"action":"tool_calls","calls":[{"name":"search_poi","args":{"city":"chengdu","limit":5}}]}',
+    );
+    expect(step.action).toBe("tool_calls");
+    if (step.action === "tool_calls") {
+      expect(step.calls[0]?.name).toBe("search_poi");
+    }
+  });
+
+  it("parses finish from fenced JSON", () => {
+    const step = parseAgentToolStep('```json\n{"action":"finish","reason":"enough"}\n```');
+    expect(step).toEqual({ action: "finish", reason: "enough" });
+  });
+
+  it("mock planner returns tools then finish", () => {
+    const round1 = parseAgentToolStep(mockAgentToolStep("成都美食推荐", "chengdu", 0, []));
+    expect(round1.action).toBe("tool_calls");
+    const round2 = parseAgentToolStep(
+      mockAgentToolStep("成都美食推荐", "chengdu", 1, [
+        { iteration: 0, calls: [{ name: "recommend_food", args: { city: "chengdu" } }], summary: "ok" },
+      ]),
+    );
+    expect(round2.action).toBe("finish");
+  });
+
+  it("summarizes rag result object", () => {
+    const text = summarizeToolResult("search_rag", {
+      chunks: [{ documentTitle: "成都美食指南", content: "微辣" }],
+      meta: {},
+    });
+    expect(text).toContain("1 条文档片段");
+    expect(text).toContain("成都美食指南");
+  });
+});
