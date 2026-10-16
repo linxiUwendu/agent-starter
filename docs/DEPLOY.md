@@ -68,7 +68,7 @@ npm run rag:embed
 调试 OpenAI 检索：
 
 ```bash
-curl "http://localhost:3000/api/travel/rag/search?q=成都火锅&city=chengdu&provider=openai"
+curl -N -X POST http://localhost:3000/api/travel/chat -H "Content-Type: application/json" -d '{"city":"chengdu","messages":[{"role":"user","content":"成都火锅推荐"}]}'
 ```
 
 ## 健康检查

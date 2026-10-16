@@ -581,7 +581,7 @@ OpenAI embedding 调试路径（`?provider=openai`）在 SQL 层按 city 过滤�
 
 ### ragMeta 可观测字段
 
-SSE `context` 与 `/api/travel/rag/search` 返回的 `ragMeta` 便于调试与面试演示：
+SSE `context` 中的 `ragMeta` 便于调试与面试演示：
 
 | 字段 | 含义 |
 |------|------|
@@ -625,7 +625,6 @@ SSE `context` 与 `/api/travel/rag/search` 返回的 `ragMeta` 便于调试与�
 | GET | `/api/travel/health` | 旅游模块 + RAG 统计 |
 | GET | `/api/travel/cities` | 城市列表 |
 | GET | `/api/travel/rag/documents` | 知识库文档列表 |
-| GET | `/api/travel/rag/search?q=` | RAG 检索调试 |
 | POST | `/api/travel/chat` | 旅游聊天 SSE（POI + RAG） |
 | GET | `/api/travel/conversations` | 对话列表 |
 | POST | `/api/travel/conversations` | 创建对话 |

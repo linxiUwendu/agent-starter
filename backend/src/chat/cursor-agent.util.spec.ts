@@ -1,4 +1,11 @@
-import { computeStreamDelta, generateMockAnswer } from "./cursor-agent.util";
+import {
+  buildCursorAgentShellCommand,
+  computeStreamDelta,
+  enrichCursorAgentErrorMessage,
+  generateMockAnswer,
+  isRetryableCursorAgentError,
+  shellSingleQuote,
+} from "./cursor-agent.util";
 
 describe("cursor-agent.util", () => {
   describe("computeStreamDelta", () => {
@@ -20,6 +27,28 @@ describe("cursor-agent.util", () => {
 
     it("ignores non-assistant events", () => {
       expect(computeStreamDelta({ type: "result" }, "")).toBeNull();
+    });
+  });
+
+  describe("shellSingleQuote", () => {
+    it("quotes strings with spaces and apostrophes", () => {
+      expect(shellSingleQuote("回复 ok")).toBe("'回复 ok'");
+      expect(buildCursorAgentShellCommand("cursor-agent", ["-p", "a'b"])).toContain("'a'\"'\"'b'");
+    });
+  });
+
+  describe("isRetryableCursorAgentError", () => {
+    it("detects ETIMEDOUT and unavailable", () => {
+      expect(isRetryableCursorAgentError("Error: [unavailable] read ETIMEDOUT")).toBe(true);
+      expect(isRetryableCursorAgentError("ENOENT")).toBe(false);
+    });
+  });
+
+  describe("enrichCursorAgentErrorMessage", () => {
+    it("adds network hint for ETIMEDOUT", () => {
+      const msg = enrichCursorAgentErrorMessage("[unavailable] read ETIMEDOUT", "login hint");
+      expect(msg).toContain("云端");
+      expect(msg).toContain("MOCK_AGENT");
     });
   });
 

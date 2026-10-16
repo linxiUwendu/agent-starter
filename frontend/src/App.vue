@@ -14,8 +14,8 @@ import {
 import ChatPanel from "./components/ChatPanel.vue";
 import ItineraryPanel from "./components/ItineraryPanel.vue";
 import MapPanel from "./components/MapPanel.vue";
+import { useKbAdmin } from "./composables/useKbAdmin";
 import { useTravelChat } from "./composables/useTravelChat";
-import { getCityDisplayName } from "./utils/detectCity";
 import type { ConversationSummary, StatusVariant } from "./types/travel";
 
 const statusText = ref("Ready");
@@ -25,6 +25,7 @@ const isStreaming = ref(false);
 const isSubmitting = ref(false);
 const conversations = ref<ConversationSummary[]>([]);
 const conversationsLoading = ref(false);
+const { isKbAdmin, consumeUrlUnlock, refreshAdminConfig } = useKbAdmin();
 
 const {
   cities,
@@ -133,9 +134,6 @@ async function handleDeleteConversation(id: string) {
 
 async function handleSubmit(content: string) {
   const detected = detectAndApplyCity(content);
-  const cityName = detected
-    ? getCityDisplayName(detected, cities.value)
-    : currentCityName.value;
 
   appendMessage({ role: "user", content });
 
@@ -146,7 +144,7 @@ async function handleSubmit(content: string) {
   isSubmitting.value = true;
   isStreaming.value = true;
   streamingContent.value = "";
-  setStatus(`识别到${cityName}，检索数据中...`, "streaming");
+  setStatus("正在连接…", "streaming");
 
   activeStream = new AbortController();
 
@@ -165,14 +163,18 @@ async function handleSubmit(content: string) {
 
     await consumeTravelSse(response, {
       onStart() {
-        setStatus("思考中...", "streaming");
+        setStatus("连接已建立…", "streaming");
+      },
+      onPhase(stage) {
+        if (stage === "retrieving") setStatus("检索 POI 与攻略…", "streaming");
+        else setStatus("正在生成回答…", "streaming");
       },
       onContext(context) {
         setContext(context);
         if (context.city) {
           void syncCitySideEffects(context.city);
         }
-        setStatus(`生成${context.cityName}攻略中...`, "streaming");
+        setStatus(`生成${context.cityName}攻略中…`, "streaming");
       },
       onDelta(text) {
         streamingContent.value += text;
@@ -225,6 +227,8 @@ function handleStop() {
 }
 
 onMounted(async () => {
+  await refreshAdminConfig();
+  await consumeUrlUnlock();
   try {
     const list = await fetchCities();
     setCities(list);
@@ -237,7 +241,8 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="travel-app">
+  <div class="travel-app-shell">
+    <div class="travel-app">
     <ChatPanel
       :cities="cities"
       :current-city-id="currentCityId"
@@ -271,9 +276,12 @@ onMounted(async () => {
       :food-guide="foodGuide"
       :city-name="currentCityName === '全国' ? '当前' : currentCityName"
       :city-id="currentCityId"
+      :cities="cities"
       :rag-chunks="travelContext?.ragChunks ?? []"
       :rag-meta="travelContext?.ragMeta ?? null"
+      :kb-admin="isKbAdmin"
       @select-poi="highlightPoi"
     />
+    </div>
   </div>
 </template>

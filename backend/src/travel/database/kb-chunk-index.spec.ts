@@ -1,7 +1,7 @@
-import { indexDocumentChunks, clearDocumentChunks } from "../database/kb-chunk-index";
+import { clearDocumentChunks, indexDocumentChunks } from "./kb-chunk-index";
 import { createTestDatabase } from "../../test/test-db";
 
-describe("kb-index.util", () => {
+describe("kb-chunk-index", () => {
   let db: ReturnType<typeof createTestDatabase>;
 
   beforeEach(() => {

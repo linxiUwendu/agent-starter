@@ -1,4 +1,5 @@
 import {
+  extractToolStepJson,
   mockAgentToolStep,
   parseAgentToolStep,
   summarizeToolResult,
@@ -13,6 +14,14 @@ describe("travel-tools.util", () => {
     if (step.action === "tool_calls") {
       expect(step.calls[0]?.name).toBe("search_poi");
     }
+  });
+
+  it("extracts JSON embedded in prose", () => {
+    const raw =
+      '好的，我来调用工具。\n{"action":"tool_calls","calls":[{"name":"search_rag","args":{"city":"chengdu","query":"火锅","limit":5}}]}\n以上。';
+    const step = parseAgentToolStep(raw);
+    expect(step.action).toBe("tool_calls");
+    expect(extractToolStepJson(raw)).toContain('"action"');
   });
 
   it("parses finish from fenced JSON", () => {

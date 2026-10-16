@@ -5,6 +5,7 @@ import {
   extractSearchTerms,
   reciprocalRankFusion,
   rerankByLexicalOverlap,
+  tokenizeForSearch,
 } from "./rag.util";
 
 describe("rag.util", () => {
@@ -58,6 +59,24 @@ describe("rag.util", () => {
 
     it("returns null for empty terms", () => {
       expect(buildFtsQuery([])).toBeNull();
+    });
+  });
+
+  describe("tokenizeForSearch", () => {
+    it("aligns query tokens with FTS lexical expansion", () => {
+      const query = "成都火锅推荐";
+      const ftsTokens = buildFtsQuery(extractSearchTerms(query))?.split(" OR ") ?? [];
+      const tfidfTokens = tokenizeForSearch(query);
+      for (const token of ftsTokens) {
+        expect(tfidfTokens).toContain(token);
+      }
+    });
+
+    it("includes CJK unigrams from document body without bigram explosion", () => {
+      const tokens = tokenizeForSearch("成都火锅");
+      expect(tokens).toContain("成");
+      expect(tokens).toContain("都");
+      expect(tokens).not.toContain("都火");
     });
   });
 

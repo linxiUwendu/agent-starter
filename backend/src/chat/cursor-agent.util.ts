@@ -4,6 +4,37 @@
  * @param streamedText 当前已推送给客户端的累积文本
  * @returns 新增后缀字符串；无增量或重复内容时返回 null
  */
+/** 供 login-shell  spawn 安全拼接 prompt 等参数 */
+export function shellSingleQuote(value: string): string {
+  return `'${value.replace(/'/g, `'\"'\"'`)}'`;
+}
+
+export function buildCursorAgentShellCommand(command: string, args: string[]): string {
+  return [command, ...args.map(shellSingleQuote)].join(" ");
+}
+
+/** cursor-agent 子进程/云端常见的可重试网络错误 */
+export function isRetryableCursorAgentError(message: string): boolean {
+  return /ETIMEDOUT|ECONNRESET|ECONNREFUSED|ENOTFOUND|\[unavailable\]|timed out/i.test(message);
+}
+
+/** 将 CLI 原始错误转为可操作的提示（不改变 Mock / 单元测试行为） */
+export function enrichCursorAgentErrorMessage(message: string, authHint: string): string {
+  if (/ETIMEDOUT|ECONNRESET|\[unavailable\]/i.test(message)) {
+    return [
+      `cursor-agent 连接 Cursor 云端失败（${message.trim()}）。`,
+      "常见原因：网络不稳定、需要可用的代理/VPN、防火墙拦截，或登录/API Key 异常导致长时间重连。",
+      `可检查：终端执行 \`cursor-agent -p --trust "ping" --mode ask\` 是否成功；${authHint}`,
+      "开发演示可设 MOCK_AGENT=true，仍保留 RAG/POI 检索与规则 Tool Loop。",
+      "若曾设 CURSOR_AGENT_SPAWN_SHELL=login，请改回 direct（login-shell 易触发 12s ETIMEDOUT）。",
+    ].join(" ");
+  }
+  if (/Authentication required/i.test(message)) {
+    return `cursor-agent 未登录。${authHint}`;
+  }
+  return message.trim() || "cursor-agent failed";
+}
+
 export function computeStreamDelta(
   event: Record<string, unknown>,
   streamedText: string,

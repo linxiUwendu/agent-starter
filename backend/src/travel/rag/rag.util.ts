@@ -1,9 +1,11 @@
 const CHUNK_SIZE = 380;
 const CHUNK_OVERLAP = 60;
 
-/** 混合检索：每路召回倍数（相对 limit） */
+/**
+ * 混合检索：每路召回 ≈ limit×MULTIPLIER（业界常见每路 50–100 或 3–10× final K，小库取偏小倍数）。
+ * 与 HYBRID_RERANK_POOL_MIN 一并用于 recall 与 RRF 后 rerank 池下限。
+ */
 export const HYBRID_RECALL_MULTIPLIER = 4;
-/** RRF 融合后进入精排的最小候选池 */
 export const HYBRID_RERANK_POOL_MIN = 20;
 
 const RECURSIVE_SEPARATORS = ["\n\n", "\n", "。", "！", "？", "；", ". ", " "] as const;
@@ -132,20 +134,41 @@ export function chunkText(text: string, chunkSize = CHUNK_SIZE, overlap = CHUNK_
 }
 
 /**
- * @description 检索侧统一分词：供 TF-IDF 向量路与查询词条扩展共用（与 extractSearchTerms 对齐并补充双字 n-gram）。
+ * @description 将 extractSearchTerms 的词条展开为与 FTS 查询一致的字面 token（中文单字 + 英文整词）。
+ */
+export function expandTermsToLexicalTokens(terms: string[]): string[] {
+  const tokens = new Set<string>();
+
+  for (const term of terms) {
+    const cleaned = term.replace(/["']/g, "").trim();
+    if (!cleaned) continue;
+
+    if (/^[a-zA-Z0-9_]+$/.test(cleaned)) {
+      tokens.add(cleaned.toLowerCase());
+      continue;
+    }
+
+    for (const char of cleaned) {
+      if (/[\u4e00-\u9fff]/.test(char)) tokens.add(char);
+    }
+  }
+
+  return [...tokens];
+}
+
+/**
+ * @description TF-IDF 回退分词：与 FTS 稀疏路对齐（字级 + 抽词），不做双字 n-gram。
+ * 第二轨优先 embedding 时，此函数仅在没有向量或未回填时启用。
  */
 export function tokenizeForSearch(text: string): string[] {
   const tokens = new Set<string>();
 
-  for (const term of extractSearchTerms(text)) {
+  for (const term of expandTermsToLexicalTokens(extractSearchTerms(text))) {
     tokens.add(term);
   }
 
-  for (const seg of text.match(/[\u4e00-\u9fff]+/g) ?? []) {
-    if (seg.length <= 4) tokens.add(seg);
-    for (let i = 0; i < seg.length - 1; i++) {
-      tokens.add(seg.slice(i, i + 2));
-    }
+  for (const char of text.match(/[\u4e00-\u9fff]/g) ?? []) {
+    tokens.add(char);
   }
 
   for (const word of text.match(/[a-zA-Z]{3,}/g) ?? []) {
@@ -223,25 +246,9 @@ export function formatTextForFtsIndex(text: string): string {
  * @returns FTS 查询字符串；无词条时返回 null
  */
 export function buildFtsQuery(terms: string[]): string | null {
-  if (terms.length === 0) return null;
-
-  const tokens = new Set<string>();
-  for (const term of terms) {
-    const cleaned = term.replace(/["']/g, "").trim();
-    if (!cleaned) continue;
-
-    if (/^[a-zA-Z0-9_]+$/.test(cleaned)) {
-      tokens.add(cleaned);
-      continue;
-    }
-
-    for (const char of cleaned) {
-      if (/[\u4e00-\u9fff]/.test(char)) tokens.add(char);
-    }
-  }
-
-  if (tokens.size === 0) return null;
-  return [...tokens].join(" OR ");
+  const tokens = expandTermsToLexicalTokens(terms);
+  if (tokens.length === 0) return null;
+  return tokens.join(" OR ");
 }
 
 /**

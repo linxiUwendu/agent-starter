@@ -142,14 +142,30 @@ onUnmounted(() => {
 
 <template>
   <section class="panel map-panel" data-testid="map-panel">
-    <header class="panel-header compact">
+    <header class="panel-header compact map-header">
       <h2 class="panel-title">地图</h2>
       <div class="map-legend">
-        <span>📍 景点/美食</span>
-        <span>📷 出片点</span>
-        <span data-testid="map-marker-count">{{ displayPois.length }} 标记</span>
+        <el-tag size="small" effect="plain">📍 景点/美食</el-tag>
+        <el-tag size="small" effect="plain">📷 出片点</el-tag>
+        <el-tag size="small" type="info" data-testid="map-marker-count">
+          {{ displayPois.length }} 标记
+        </el-tag>
       </div>
     </header>
     <div ref="mapRoot" class="map-root" />
   </section>
 </template>
+
+<style scoped>
+.map-header {
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.map-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-left: auto;
+}
+</style>

@@ -8,6 +8,7 @@ import { PoiRepository } from "./database/repositories/poi.repository";
 import { PoiService } from "./poi.service";
 import { EmbeddingService } from "./rag/embedding.service";
 import { RagService } from "./rag/rag.service";
+import { KbAdminGuard } from "./kb-admin.guard";
 import { TravelController } from "./travel.controller";
 import { TravelService } from "./travel.service";
 import { TravelToolsService } from "./travel-tools.service";
@@ -19,6 +20,6 @@ const domainServices = [PoiService, EmbeddingService, RagService, TravelToolsSer
 @Module({
   imports: [ChatModule],
   controllers: [TravelController],
-  providers: [DatabaseService, ...repositories, ...domainServices],
+  providers: [DatabaseService, KbAdminGuard, ...repositories, ...domainServices],
 })
 export class TravelModule {}

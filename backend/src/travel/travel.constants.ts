@@ -144,6 +144,37 @@ export function detectCityInText(text: string): string | null {
   return null;
 }
 
+/**
+ * @description 知识库文档归属城市：正文/标题识别优先于请求 cityId（避免前端「当前浏览城市」误绑）。
+ */
+export function resolveKbDocumentCity(input: {
+  cityId?: string | null;
+  title: string;
+  content: string;
+  /** 运维手动选择的城市，不再被正文/标题推断覆盖 */
+  cityIdLocked?: boolean;
+}): { cityId: string | null; warning?: string } {
+  const requested =
+    input.cityId != null && String(input.cityId).trim() !== ""
+      ? resolveCityId(String(input.cityId))
+      : null;
+
+  if (input.cityIdLocked && requested) {
+    return { cityId: requested };
+  }
+
+  const inferred = detectCityInText(`${input.title}\n${input.content}`);
+
+  if (inferred && requested && inferred !== requested) {
+    return {
+      cityId: inferred,
+      warning: `文档内容识别为 ${inferred}，已忽略请求中的 cityId=${requested}`,
+    };
+  }
+
+  return { cityId: inferred ?? requested };
+}
+
 export function resolveCityFromConversation(
   messages: Array<{ role: string; content: string }>,
   hintCity?: string,

@@ -166,8 +166,7 @@ erDiagram
 | GET | `/api/travel/cities` | 城市列表 |
 | GET | `/api/travel/food-guide?city=` | 美食攻略 |
 | GET | `/api/travel/map-markers?city=` | 地图标记 |
-| GET | `/api/travel/pois` | POI 搜索 |
-| POST | `/api/travel/chat` | 旅游聊天 SSE |
+| POST | `/api/travel/chat` | 旅游聊天 SSE（内含 Tool Loop + RAG） |
 
 ## 配置项（`.env`）
 

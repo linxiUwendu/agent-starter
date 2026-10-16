@@ -18,8 +18,8 @@ describe("RagService", () => {
     db.close();
   });
 
-  it("retrieve returns chunks matching Chinese keywords", () => {
-    const result = rag.retrieveWithMeta("成都火锅怎么选", "chengdu", 5);
+  it("retrieve returns chunks matching Chinese keywords", async () => {
+    const result = await rag.retrieveWithMetaAsync("成都火锅怎么选", "chengdu", 5);
     expect(result.chunks.length).toBeGreaterThan(0);
     expect(result.chunks[0]?.documentTitle).toBe("成都美食指南");
     expect(result.meta.methods).toEqual(expect.arrayContaining(["fts", "vector"]));
@@ -27,13 +27,13 @@ describe("RagService", () => {
     expect(result.meta.tokenEstimate).toBeGreaterThan(0);
   });
 
-  it("retrieveWithMeta filters by city", () => {
-    const { chunks } = rag.retrieveWithMeta("火锅", "shanghai", 5);
+  it("retrieveWithMetaAsync filters by city", async () => {
+    const { chunks } = await rag.retrieveWithMetaAsync("火锅", "shanghai", 5);
     expect(chunks).toHaveLength(0);
   });
 
-  it("retrieveWithMeta returns empty for meaningless input", () => {
-    expect(rag.retrieveWithMeta("a", "chengdu").chunks).toEqual([]);
+  it("retrieveWithMetaAsync returns empty for meaningless input", async () => {
+    expect((await rag.retrieveWithMetaAsync("a", "chengdu")).chunks).toEqual([]);
   });
 
   it("getStats reports document and chunk counts", () => {

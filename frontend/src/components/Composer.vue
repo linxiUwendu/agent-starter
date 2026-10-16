@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { nextTick, ref, watch } from "vue";
+import { ref } from "vue";
+import { Top } from "@element-plus/icons-vue";
 
 const props = defineProps<{
   disabled: boolean;
-  isSubmitting: boolean;
+  isGenerating: boolean;
   placeholder?: string;
 }>();
 
@@ -13,28 +14,18 @@ const emit = defineEmits<{
 }>();
 
 const prompt = ref("");
-const textareaRef = ref<HTMLTextAreaElement | null>(null);
-
-function autoResize() {
-  const el = textareaRef.value;
-  if (!el) return;
-  el.style.height = "auto";
-  el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
-}
-
-watch(prompt, () => nextTick(autoResize));
 
 function onSubmit() {
   const content = prompt.value.trim();
-  if (!content || props.disabled || props.isSubmitting) return;
+  if (!content || props.disabled || props.isGenerating) return;
   emit("submit", content);
   prompt.value = "";
-  nextTick(autoResize);
 }
 
 function onKeydown(event: KeyboardEvent) {
   if (event.key === "Enter" && !event.shiftKey) {
     event.preventDefault();
+    if (props.isGenerating) return;
     onSubmit();
   }
 }
@@ -42,32 +33,118 @@ function onKeydown(event: KeyboardEvent) {
 
 <template>
   <div class="composer-wrap">
-    <form class="composer" @submit.prevent="onSubmit">
-      <div class="composer-box">
-        <label class="sr-only" for="prompt">Message</label>
-        <textarea
-          id="prompt"
-          ref="textareaRef"
-          v-model="prompt"
-          rows="1"
-          data-testid="chat-input"
-          :placeholder="placeholder ?? '发送消息...'"
-          :disabled="disabled || isSubmitting"
-          @keydown="onKeydown"
+    <div class="composer-shell">
+      <el-input
+        v-model="prompt"
+        class="composer-input"
+        type="textarea"
+        :autosize="{ minRows: 1, maxRows: 8 }"
+        data-testid="chat-input"
+        :placeholder="isGenerating ? '正在生成回复…' : (placeholder ?? '发送消息...')"
+        :disabled="disabled"
+        resize="none"
+        @keydown="onKeydown"
+      />
+      <div class="composer-toolbar">
+        <button
+          v-if="isGenerating"
+          type="button"
+          class="composer-stop"
+          aria-label="停止生成"
+          @click="emit('stop')"
+        >
+          <span class="stop-icon" />
+        </button>
+        <el-button
+          v-else
+          type="primary"
+          circle
+          data-testid="chat-submit"
+          aria-label="发送"
+          :icon="Top"
+          :disabled="disabled || !prompt.trim()"
+          @click="onSubmit"
         />
-        <div class="composer-actions">
-          <button v-if="isSubmitting" type="button" class="stop-btn" @click="emit('stop')">
-            停止生成
-          </button>
-          <button type="submit" class="send-btn" data-testid="chat-submit" aria-label="发送" :disabled="disabled || isSubmitting">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <line x1="12" y1="19" x2="12" y2="5" />
-              <polyline points="5 12 12 5 19 12" />
-            </svg>
-          </button>
-        </div>
       </div>
-      <p class="composer-hint">Enter 发送 · Shift+Enter 换行</p>
-    </form>
+    </div>
+    <p class="composer-hint">
+      {{ isGenerating ? "可随时停止生成" : "Enter 发送 · Shift+Enter 换行" }}
+    </p>
   </div>
 </template>
+
+<style scoped>
+.composer-wrap {
+  padding: 12px 16px 16px;
+  background: var(--el-bg-color);
+}
+
+.composer-shell {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  padding: 10px 12px 10px 16px;
+  border: 1px solid var(--el-border-color);
+  border-radius: 24px;
+  background: var(--el-bg-color);
+  box-shadow: 0 2px 12px rgb(0 0 0 / 6%);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.composer-shell:focus-within {
+  border-color: var(--el-color-primary-light-5);
+  box-shadow: 0 2px 16px rgb(16 163 127 / 12%);
+}
+
+.composer-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.composer-input :deep(.el-textarea__inner) {
+  border: none;
+  box-shadow: none;
+  padding: 0;
+  background: transparent;
+  line-height: 1.5;
+}
+
+.composer-toolbar {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  padding-bottom: 2px;
+}
+
+.composer-stop {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  background: var(--el-text-color-primary);
+  color: #fff;
+  padding: 0;
+}
+
+.composer-stop:hover {
+  opacity: 0.85;
+}
+
+.stop-icon {
+  width: 12px;
+  height: 12px;
+  border-radius: 2px;
+  background: currentColor;
+}
+
+.composer-hint {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  text-align: center;
+}
+</style>

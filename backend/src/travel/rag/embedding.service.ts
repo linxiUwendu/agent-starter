@@ -2,8 +2,8 @@ import { Injectable, Logger } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 
 /**
- * @description 文本向量化服务：默认 TF-IDF（无网络）；可选 OpenAI embedding API。
- * 同步检索路径使用本地 VectorIndex；OpenAI 路径需预回填 kb_chunks.embedding。
+ * @description 文本向量化服务：第二轨优先 OpenAI embedding（upsert/rag:embed 写入 kb_chunks.embedding）；
+ * 未配置或无向量时检索回退为内存 TF-IDF。
  */
 @Injectable()
 export class EmbeddingService {

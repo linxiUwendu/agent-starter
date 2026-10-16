@@ -170,29 +170,6 @@ export class KbRepository {
       .all(ftsQuery, limit) as KbFtsRow[];
   }
 
-  searchChunksLike(terms: string[], city: string | undefined, limit: number): KbChunkSearchRow[] {
-    if (terms.length === 0) return [];
-
-    const clauses = terms.map(() => "c.content LIKE ?").join(" OR ");
-    const values: unknown[] = terms.map((t) => `%${t}%`);
-
-    let sql = `
-      SELECT c.id AS chunk_id, d.title AS document_title, c.content
-      ${KB_CHUNK_WITH_DOC_FROM}
-      WHERE (${clauses})
-    `;
-
-    if (city) {
-      sql += ` AND ${KB_CHUNK_CITY_OR_GLOBAL}`;
-      values.push(city);
-    }
-
-    sql += " ORDER BY LENGTH(c.content) LIMIT ?";
-    values.push(limit);
-
-    return this.db.prepare(sql).all(...values) as KbChunkSearchRow[];
-  }
-
   listDocumentRows(city?: string): KbDocumentListRow[] {
     const baseSelect = `
           SELECT id, city_id, title, source, tags, updated_at,
@@ -248,6 +225,10 @@ export class KbRepository {
         "SELECT id, chunk_index, content FROM kb_chunks WHERE document_id = ? ORDER BY chunk_index",
       )
       .all(documentId) as Array<{ id: string; chunk_index: number; content: string }>;
+  }
+
+  updateChunkEmbedding(chunkId: string, embeddingJson: string) {
+    this.db.prepare("UPDATE kb_chunks SET embedding = ? WHERE id = ?").run(embeddingJson, chunkId);
   }
 
   documentExists(id: string): boolean {

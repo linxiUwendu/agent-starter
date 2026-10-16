@@ -5,7 +5,14 @@ import path from "node:path";
 
 import { AGENT_NAME, ChatMessage, SYSTEM_PROMPT } from "../agent/agent.constants";
 import { streamTextCharByChar } from "../common/sse.util";
-import { computeStreamDelta, generateMockAnswer } from "./cursor-agent.util";
+import { mockAgentToolStep, parseAgentToolStep } from "../travel/travel-tools.util";
+import {
+  buildCursorAgentShellCommand,
+  computeStreamDelta,
+  enrichCursorAgentErrorMessage,
+  generateMockAnswer,
+  isRetryableCursorAgentError,
+} from "./cursor-agent.util";
 
 export type DeltaHandler = (text: string) => void;
 
@@ -38,6 +45,11 @@ export class CursorAgentService {
    */
   private get stallMs() {
     return Number(this.config.get<string>("CURSOR_STALL_MS") ?? 45000);
+  }
+
+  /** 网络类失败时的额外重试次数（默认 1 → 最多共 2 次调用） */
+  private get agentRetries() {
+    return Math.max(0, Number(this.config.get<string>("CURSOR_AGENT_RETRIES") ?? 1));
   }
 
   /**
@@ -90,7 +102,56 @@ export class CursorAgentService {
   private getAgentEnv() {
     const env = { ...process.env };
     if (!this.useApiKey) delete env.CURSOR_API_KEY;
+    // 与交互式终端一致：保留代理与身份路径，避免 IDE 子进程读不到 CLI 登录态（macOS 钥匙串）
+    for (const key of [
+      "HOME",
+      "USER",
+      "LOGNAME",
+      "TMPDIR",
+      "PATH",
+      "HTTP_PROXY",
+      "HTTPS_PROXY",
+      "ALL_PROXY",
+      "NO_PROXY",
+      "no_proxy",
+    ]) {
+      const value = process.env[key];
+      if (value) env[key] = value;
+    }
     return env;
+  }
+
+  /**
+   * 经 zsh/bash login shell（-il -c）启动会破坏 cursor-agent 云端连接（约 12s ETIMEDOUT）；
+   * 仅当显式 CURSOR_AGENT_SPAWN_SHELL=login 时启用。
+   */
+  private get spawnViaLoginShell() {
+    return this.config.get<string>("CURSOR_AGENT_SPAWN_SHELL") === "login";
+  }
+
+  private spawnAgentProcess(spawnArgs: string[]) {
+    const env = this.getAgentEnv();
+    const cwd = this.projectRoot;
+
+    if (this.spawnViaLoginShell) {
+      const shell = env.SHELL?.trim() || "/bin/zsh";
+      const cmd = buildCursorAgentShellCommand(this.command, spawnArgs);
+      this.logger.warn(
+        `cursor-agent spawn mode=login-shell (may ETIMEDOUT if .zshrc sets proxy); shell=${shell}`,
+      );
+      return spawn(shell, ["-il", "-c", cmd], {
+        cwd,
+        env,
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+    }
+
+    this.logger.log("cursor-agent spawn mode=direct");
+    return spawn(this.command, spawnArgs, {
+      cwd,
+      env,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
   }
 
   /**
@@ -146,6 +207,16 @@ export class CursorAgentService {
    * @description 非流式收集 cursor-agent 完整输出，供 Tool Loop 规划轮使用。
    */
   async runCollect(prompt: string): Promise<string> {
+    if (this.mockAgent && prompt.includes("工具调度器")) {
+      const userMessage = prompt.match(/用户问题:\s*(.+)/)?.[1]?.trim() ?? "";
+      const city = prompt.match(/city_id=([a-z0-9_]+)/i)?.[1] ?? "chengdu";
+      const raw = mockAgentToolStep(userMessage, city, 0, []);
+      const step = parseAgentToolStep(raw);
+      if (step.action === "tool_calls") return raw;
+    }
+    if (this.mockAgent) {
+      return generateMockAnswer(prompt);
+    }
     return this.run(prompt, () => {});
   }
 
@@ -160,149 +231,191 @@ export class CursorAgentService {
       return this.runMock(prompt, onDelta);
     }
 
-    return this.withAgentLock(
-      () =>
-        new Promise<string>((resolve, reject) => {
-          const startedAt = Date.now();
-          let child: ChildProcess | null = null;
-          let settled = false;
-          let stdoutBuffer = "";
-          let streamedText = "";
-          let finalResult = "";
-          let stderrText = "";
-          let lastActivityAt = Date.now();
+    return this.withAgentLock(async () => {
+      const maxAttempts = 1 + this.agentRetries;
+      let lastError: Error | null = null;
 
-          const spawnArgs = [
-            "-p",
-            "--trust",
-            "--force",
-            "--mode",
-            "ask",
-            "--output-format",
-            "stream-json",
-            "--stream-partial-output",
-            prompt,
-          ];
-
-          const cleanup = () => {
-            settled = true;
-            clearTimeout(timeoutId);
-            clearInterval(stallTimer);
-            child?.kill("SIGTERM");
-          };
-
-          const fail = (error: Error) => {
-            if (settled) return;
-            cleanup();
-            this.logger.error(`error ${Date.now() - startedAt}ms ${error.message}`);
-            reject(error);
-          };
-
-          const succeed = (answer: string) => {
-            if (settled) return;
-            settled = true;
-            clearTimeout(timeoutId);
-            clearInterval(stallTimer);
-            this.logger.log(`done ${Date.now() - startedAt}ms answerLen=${answer.length}`);
-            resolve(answer);
-          };
-
-          const processLine = (line: string) => {
-            if (!line.trim()) return;
-            lastActivityAt = Date.now();
-
-            let event: Record<string, unknown>;
-            try {
-              event = JSON.parse(line) as Record<string, unknown>;
-            } catch {
-              return;
-            }
-
-            const delta = computeStreamDelta(event, streamedText);
-            if (delta) {
-              streamedText += delta;
-              onDelta(delta);
-              return;
-            }
-
-            if (event.type === "result" && event.subtype === "success") {
-              finalResult = typeof event.result === "string" ? event.result : streamedText;
-              const remaining = finalResult.slice(streamedText.length);
-              if (remaining) {
-                streamedText += remaining;
-                onDelta(remaining);
-              }
-            }
-          };
-
-          child = spawn(this.command, spawnArgs, {
-            cwd: this.projectRoot,
-            env: this.getAgentEnv(),
-            stdio: ["ignore", "pipe", "pipe"],
-          });
-
-          if (!child.stdout || !child.stderr) {
-            fail(new Error("Failed to start cursor-agent process."));
-            return;
+      for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        try {
+          return await this.runCliOnce(prompt, onDelta);
+        } catch (error) {
+          lastError = error instanceof Error ? error : new Error(String(error));
+          const retryable = isRetryableCursorAgentError(lastError.message);
+          if (!retryable || attempt >= maxAttempts) {
+            throw new Error(enrichCursorAgentErrorMessage(lastError.message, this.authHint()));
           }
+          this.logger.warn(
+            `cursor-agent attempt ${attempt}/${maxAttempts} failed (${lastError.message}); retrying in 2s…`,
+          );
+          await new Promise((resolve) => setTimeout(resolve, 2000));
+        }
+      }
 
-          const timeoutId = setTimeout(() => {
-            fail(new Error(`cursor-agent timed out after ${Math.round(this.timeoutMs / 1000)} seconds.`));
-          }, this.timeoutMs);
+      throw new Error(enrichCursorAgentErrorMessage(lastError?.message ?? "unknown", this.authHint()));
+    });
+  }
 
-          const stallTimer = setInterval(() => {
-            if (Date.now() - lastActivityAt > this.stallMs) {
-              fail(
-                new Error(
-                  `cursor-agent 在 ${Math.round(this.stallMs / 1000)} 秒内无任何输出。${this.authHint()}`,
-                ),
-              );
-            }
-          }, 5000);
+  /** 单次 CLI 调用；流式增量在成功前仅缓冲，避免失败重试时前端出现半条回复 */
+  private runCliOnce(prompt: string, onDelta: DeltaHandler): Promise<string> {
+    return new Promise<string>((resolve, reject) => {
+      const startedAt = Date.now();
+      let child: ChildProcess | null = null;
+      let settled = false;
+      let stdoutBuffer = "";
+      let streamedText = "";
+      let finalResult = "";
+      let stderrText = "";
+      let lastActivityAt = Date.now();
+      const pendingDeltas: string[] = [];
 
-          child.stdout.on("data", (chunk: Buffer) => {
-            stdoutBuffer += chunk.toString("utf8");
-            const lines = stdoutBuffer.split("\n");
-            stdoutBuffer = lines.pop() ?? "";
-            for (const line of lines) processLine(line);
-          });
+      const spawnArgs = [
+        "-p",
+        "--trust",
+        "--force",
+        "--mode",
+        "ask",
+        "--output-format",
+        "stream-json",
+        "--stream-partial-output",
+        prompt,
+      ];
 
-          child.stderr.on("data", (chunk: Buffer) => {
-            lastActivityAt = Date.now();
-            stderrText += chunk.toString("utf8");
-          });
+      let timeoutId: ReturnType<typeof setTimeout>;
+      let stallTimer: ReturnType<typeof setInterval>;
 
-          child.on("error", (error: NodeJS.ErrnoException) => {
-            const message =
-              error.code === "ENOENT"
-                ? `Cannot find '${this.command}'. Install Cursor CLI or set CURSOR_AGENT_COMMAND.`
-                : error.message;
-            fail(new Error(message));
-          });
+      const cleanup = () => {
+        settled = true;
+        clearTimeout(timeoutId);
+        clearInterval(stallTimer);
+        child?.kill("SIGTERM");
+      };
 
-          child.on("close", (code) => {
-            if (settled) return;
+      const fail = (error: Error) => {
+        if (settled) return;
+        cleanup();
+        if (stderrText.trim()) {
+          this.logger.warn(`cursor-agent stderr: ${stderrText.trim().slice(0, 600)}`);
+        }
+        this.logger.error(`error ${Date.now() - startedAt}ms ${error.message}`);
+        reject(error);
+      };
 
-            if (stdoutBuffer.trim()) {
-              processLine(stdoutBuffer);
-              stdoutBuffer = "";
-            }
+      const flushDeltas = () => {
+        for (const delta of pendingDeltas) onDelta(delta);
+      };
 
-            const answer = (finalResult || streamedText).trim();
-            if (code === 0 && answer) {
-              succeed(answer);
-              return;
-            }
+      const succeed = (answer: string) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeoutId);
+        clearInterval(stallTimer);
+        flushDeltas();
+        this.logger.log(`done ${Date.now() - startedAt}ms answerLen=${answer.length}`);
+        resolve(answer);
+      };
 
-            const stderr = stderrText.trim();
-            if (stderr.includes("Authentication required")) {
-              fail(new Error(`cursor-agent 未登录。${this.authHint()}`));
-              return;
-            }
-            fail(new Error(stderr || `cursor-agent exited with code ${code ?? "unknown"}.`));
-          });
-        }),
-    );
+      const processLine = (line: string) => {
+        if (!line.trim()) return;
+        lastActivityAt = Date.now();
+
+        let event: Record<string, unknown>;
+        try {
+          event = JSON.parse(line) as Record<string, unknown>;
+        } catch {
+          return;
+        }
+
+        const delta = computeStreamDelta(event, streamedText);
+        if (delta) {
+          streamedText += delta;
+          pendingDeltas.push(delta);
+          return;
+        }
+
+        if (event.type === "result" && event.subtype === "success") {
+          finalResult = typeof event.result === "string" ? event.result : streamedText;
+          const remaining = finalResult.slice(streamedText.length);
+          if (remaining) {
+            streamedText += remaining;
+            pendingDeltas.push(remaining);
+          }
+        }
+      };
+
+      this.logger.log(
+        `cursor-agent spawn promptChars=${prompt.length} cwd=${this.projectRoot}`,
+      );
+      if (prompt.length > 60_000) {
+        this.logger.warn(
+          `cursor-agent prompt very large (${prompt.length} chars); may increase timeout risk`,
+        );
+      }
+
+      child = this.spawnAgentProcess(spawnArgs);
+
+      if (!child.stdout || !child.stderr) {
+        fail(new Error("Failed to start cursor-agent process."));
+        return;
+      }
+
+      timeoutId = setTimeout(() => {
+        fail(new Error(`cursor-agent timed out after ${Math.round(this.timeoutMs / 1000)} seconds.`));
+      }, this.timeoutMs);
+
+      stallTimer = setInterval(() => {
+        if (Date.now() - lastActivityAt > this.stallMs) {
+          fail(
+            new Error(
+              `cursor-agent 在 ${Math.round(this.stallMs / 1000)} 秒内无任何输出。${this.authHint()}`,
+            ),
+          );
+        }
+      }, 5000);
+
+      child.stdout.on("data", (chunk: Buffer) => {
+        lastActivityAt = Date.now();
+        stdoutBuffer += chunk.toString("utf8");
+        const lines = stdoutBuffer.split("\n");
+        stdoutBuffer = lines.pop() ?? "";
+        for (const line of lines) processLine(line.replace(/\r$/, ""));
+      });
+
+      child.stderr.on("data", (chunk: Buffer) => {
+        lastActivityAt = Date.now();
+        stderrText += chunk.toString("utf8");
+      });
+
+      child.on("error", (error: NodeJS.ErrnoException) => {
+        const message =
+          error.code === "ENOENT"
+            ? `Cannot find '${this.command}'. Install Cursor CLI or set CURSOR_AGENT_COMMAND.`
+            : error.message;
+        fail(new Error(message));
+      });
+
+      child.on("close", (code) => {
+        if (settled) return;
+
+        if (stdoutBuffer.trim()) {
+          processLine(stdoutBuffer);
+          stdoutBuffer = "";
+        }
+
+        const answer = (finalResult || streamedText).trim();
+        if (code === 0 && answer) {
+          succeed(answer);
+          return;
+        }
+
+        const stderr = stderrText.trim();
+        const combined = [stderr, `exit ${code ?? "unknown"}`].filter(Boolean).join(" ");
+        if (stderr.includes("Authentication required")) {
+          fail(new Error(`cursor-agent 未登录。${this.authHint()}`));
+          return;
+        }
+        fail(new Error(combined || `cursor-agent exited with code ${code ?? "unknown"}.`));
+      });
+    });
   }
 
   /**
@@ -319,6 +432,7 @@ export class CursorAgentService {
       hasCursorApiKey: Boolean(this.config.get<string>("CURSOR_API_KEY")),
       timeoutMs: this.timeoutMs,
       stallMs: this.stallMs,
+      spawnShell: this.spawnViaLoginShell ? "login" : "direct",
       streaming: true,
       mode: "ask",
     };

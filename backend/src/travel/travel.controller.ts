@@ -3,18 +3,26 @@ import {
   Body,
   Controller,
   Delete,
+  ForbiddenException,
   Get,
   Param,
   Post,
   Query,
   Res,
+  UploadedFile,
+  UseGuards,
+  UseInterceptors,
 } from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
+import { FileInterceptor } from "@nestjs/platform-express";
 import type { Response } from "express";
 
 import { ChatMessageDto } from "../chat/dto/chat-message.dto";
 import { TravelService } from "./travel.service";
-import { ItineraryQueryDto, SearchPoiQueryDto, TravelChatRequestDto, UpsertKbDocumentDto } from "./dto/travel.dto";
+import { TravelChatRequestDto, UpsertKbDocumentDto } from "./dto/travel.dto";
 import { resolveCityId } from "./travel.constants";
+import { KbAdminGuard } from "./kb-admin.guard";
+import { readKbAdminKey } from "./kb-admin.util";
 
 function normalizeMessages(messages: ChatMessageDto[]) {
   return messages.map((m) => ({ role: m.role, content: m.content.trim() }));
@@ -23,7 +31,10 @@ function normalizeMessages(messages: ChatMessageDto[]) {
 /** 旅游模块 HTTP 入口（仅依赖 TravelService 门面） */
 @Controller("api/travel")
 export class TravelController {
-  constructor(private readonly travel: TravelService) {}
+  constructor(
+    private readonly travel: TravelService,
+    private readonly config: ConfigService,
+  ) {}
 
   @Get("health")
   health() {
@@ -35,46 +46,9 @@ export class TravelController {
     return this.travel.listCities();
   }
 
-  @Get("tools")
-  tools() {
-    return this.travel.getToolDefinitions();
-  }
-
   @Get("food-guide")
   foodGuide(@Query("city") city?: string) {
     return this.travel.getFoodGuide(city);
-  }
-
-  @Get("pois")
-  searchPois(@Query() query: SearchPoiQueryDto) {
-    return this.travel.searchPois({
-      city: resolveCityId(query.city),
-      query: query.q,
-      type: query.type ?? "all",
-      limit: query.limit,
-    });
-  }
-
-  @Get("photo-spots")
-  photoSpots(@Query("city") city?: string, @Query("q") q?: string) {
-    return this.travel.getPhotoSpots(city, q);
-  }
-
-  @Get("itineraries")
-  itineraries(@Query("city") city?: string) {
-    return this.travel.listItineraries(city);
-  }
-
-  @Get("itinerary-suggest")
-  suggestItinerary(@Query() query: ItineraryQueryDto) {
-    return this.travel.suggestItinerary(query);
-  }
-
-  @Get("itineraries/:id")
-  itineraryDetail(@Param("id") id: string) {
-    const detail = this.travel.getItinerary(id);
-    if (!detail) throw new BadRequestException({ error: "Itinerary not found." });
-    return detail;
   }
 
   @Get("map-markers")
@@ -82,22 +56,30 @@ export class TravelController {
     return this.travel.getMapMarkers(city);
   }
 
-  @Get("rag/search")
-  async ragSearch(
-    @Query("q") q?: string,
-    @Query("city") city?: string,
-    @Query("provider") provider?: string,
-  ) {
-    if (!q?.trim()) throw new BadRequestException({ error: "q is required." });
-    return this.travel.ragSearch(q.trim(), city, provider);
+  /** 是否启用知识库运维（仅需配置后端 TRAVEL_KB_ADMIN_KEY，前端据此展示「运维登录」） */
+  @Get("rag/admin-config")
+  ragAdminConfig() {
+    return { enabled: !!readKbAdminKey(this.config) };
+  }
+
+  @Post("rag/admin-login")
+  ragAdminLogin(@Body("key") key?: string) {
+    const expected = readKbAdminKey(this.config);
+    if (!expected) return { ok: true as const };
+    if (key?.trim() !== expected) {
+      throw new ForbiddenException({ error: "Invalid KB admin key." });
+    }
+    return { ok: true as const };
   }
 
   @Get("rag/documents")
+  @UseGuards(KbAdminGuard)
   ragDocuments(@Query("city") city?: string) {
     return this.travel.listRagDocuments(city);
   }
 
   @Get("rag/documents/:id")
+  @UseGuards(KbAdminGuard)
   ragDocumentDetail(@Param("id") id: string) {
     const doc = this.travel.getRagDocument(id);
     if (!doc) throw new BadRequestException({ error: "Document not found." });
@@ -105,17 +87,57 @@ export class TravelController {
   }
 
   @Post("rag/documents")
-  upsertRagDocument(@Body() body: UpsertKbDocumentDto) {
+  @UseGuards(KbAdminGuard)
+  async upsertRagDocument(@Body() body: UpsertKbDocumentDto) {
+    if (!body.cityId?.trim()) {
+      throw new BadRequestException({ error: "cityId is required." });
+    }
     return this.travel.upsertRagDocument({
       id: body.id,
-      cityId: body.cityId ? resolveCityId(body.cityId) : null,
+      cityId: resolveCityId(body.cityId),
+      cityIdLocked: body.cityIdLocked ?? true,
       title: body.title.trim(),
       content: body.content.trim(),
       tags: body.tags,
     });
   }
 
+  @Post("rag/documents/upload-pdf")
+  @UseGuards(KbAdminGuard)
+  @UseInterceptors(FileInterceptor("file", { limits: { fileSize: 10 * 1024 * 1024 } }))
+  async uploadRagPdfDocument(
+    @UploadedFile() file: Express.Multer.File | undefined,
+    @Body("cityId") cityId?: string,
+    @Body("title") title?: string,
+  ) {
+    if (!cityId?.trim()) {
+      throw new BadRequestException({ error: "cityId is required." });
+    }
+    if (!file?.buffer?.length) {
+      throw new BadRequestException({ error: "PDF file is required." });
+    }
+    const name = file.originalname ?? "upload.pdf";
+    const isPdf =
+      file.mimetype === "application/pdf" || name.toLowerCase().endsWith(".pdf");
+    if (!isPdf) {
+      throw new BadRequestException({ error: "Only PDF files are supported." });
+    }
+
+    try {
+      return await this.travel.upsertRagDocumentFromPdf({
+        cityId: cityId.trim(),
+        title: title?.trim(),
+        filename: name,
+        buffer: file.buffer,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "PDF parse failed.";
+      throw new BadRequestException({ error: message });
+    }
+  }
+
   @Delete("rag/documents/:id")
+  @UseGuards(KbAdminGuard)
   deleteRagDocument(@Param("id") id: string) {
     const ok = this.travel.deleteRagDocument(id);
     if (!ok) throw new BadRequestException({ error: "Document not found." });

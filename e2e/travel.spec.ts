@@ -18,7 +18,6 @@ test.describe("AI Travel Assistant", () => {
       timeout: 15_000,
     });
 
-    await page.getByTestId("panel-tab-rag").click();
     await expect(page.getByTestId("rag-hits")).toBeVisible({ timeout: 10_000 });
   });
 
@@ -53,9 +52,29 @@ test.describe("AI Travel Assistant", () => {
     const body = (await res.json()) as { chunkCount: number };
     expect(body.chunkCount).toBeGreaterThan(0);
 
-    const search = await request.get(
-      "/api/travel/rag/search?q=火锅微辣&city=chengdu",
-    );
-    expect(search.ok()).toBeTruthy();
+    const list = await request.get("/api/travel/rag/documents?city=chengdu");
+    expect(list.ok()).toBeTruthy();
+    const docs = (await list.json()) as { documents: Array<{ id: string }> };
+    expect(docs.documents.some((d) => d.id === "kb_e2e_test")).toBe(true);
+  });
+
+  test("kb upsert ignores wrong cityId when content names another city", async ({ request }) => {
+    const res = await request.post("/api/travel/rag/documents", {
+      data: {
+        id: "kb_e2e_city_mismatch",
+        cityId: "shanghai",
+        title: "成都旅行攻略",
+        content: "大熊猫繁育研究基地与春熙路。",
+      },
+    });
+    expect(res.ok()).toBeTruthy();
+    const body = (await res.json()) as { cityIdResolved: string };
+    expect(body.cityIdResolved).toBe("chengdu");
+
+    const detail = await request.get("/api/travel/rag/documents/kb_e2e_city_mismatch");
+    expect(detail.ok()).toBeTruthy();
+    const doc = (await detail.json()) as { cityId: string | null; title: string };
+    expect(doc.cityId).toBe("chengdu");
+    expect(doc.title).toContain("成都");
   });
 });

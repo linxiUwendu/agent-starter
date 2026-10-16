@@ -78,7 +78,7 @@ sequenceDiagram
 
 OpenAI embedding 路径在 SQL 层按 city 过滤并 `LIMIT 300`，避免全国向量扫描。
 
-可选 **OpenAI embedding**：设置 `RAG_EMBEDDING_PROVIDER=openai`，运行 `npm run rag:embed -w backend` 回填向量，用 `/api/travel/rag/search?provider=openai` 调试。
+可选 **OpenAI embedding**：设置 `RAG_EMBEDDING_PROVIDER=openai`，运行 `npm run rag:embed -w backend` 回填向量；检索效果通过 `POST /api/travel/chat` 的 SSE `context.ragChunks` 观察。
 
 **为什么 LIKE + 向量？** LIKE 精确命中关键词；TF-IDF 向量补充语义相近片段（如「微辣」↔「火锅起步」），RRF 融合比单路更稳。
 
@@ -115,7 +115,7 @@ LLM 被指示「基于上面的数据回答」，从而减少幻觉、增加可�
 
 - **SSE `context` 事件**：携带 `ragChunks` + `ragMeta`（耗时、检索方法、token 估算）
 - **右侧「知识库」Tab**：`GET /api/travel/rag/documents` 列出全部文档
-- **搜索调试**：`GET /api/travel/rag/search?q=火锅&city=chengdu`
+- **检索效果**：发聊天消息，看 SSE `context` 中的 `ragChunks` / `ragMeta`
 
 ---
 
@@ -125,7 +125,6 @@ LLM 被指示「基于上面的数据回答」，从而减少幻觉、增加可�
 |------|------|------|
 | GET | `/api/travel/rag/documents?city=` | 文档列表 |
 | GET | `/api/travel/rag/documents/:id` | 文档详情 + 分块 |
-| GET | `/api/travel/rag/search?q=&city=&limit=` | 独立检索（调试） |
 | POST | `/api/travel/rag/documents` | 创建/更新文档并 reindex |
 | DELETE | `/api/travel/rag/documents/:id` | 删除文档 |
 | GET | `/api/travel/health` | 含 `rag: { documents, chunks }` |

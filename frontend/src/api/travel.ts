@@ -18,6 +18,8 @@ const STREAM_IDLE_TIMEOUT_MS = 300_000;
 interface TravelSseHandlers {
   /** 收到 `start` 事件时触发，表示流式响应已开始 */
   onStart?: () => void;
+  /** 收到 `phase` 事件：retrieving | generating */
+  onPhase?: (stage: "retrieving" | "generating") => void;
   /** 收到 `context` 事件时触发，携带检索到的旅游上下文（POI、行程等） */
   onContext?: (context: TravelContext) => void;
   /** 收到 `delta` 事件时触发，携带增量文本片段，用于逐字渲染助手回复 */
@@ -88,7 +90,10 @@ export async function consumeTravelSse(response: Response, handlers: TravelSseHa
 
         const payload = JSON.parse(data) as Record<string, unknown>;
         if (event === "start") handlers.onStart?.();
-        else if (event === "context") handlers.onContext?.(payload as unknown as TravelContext);
+        else if (event === "phase") {
+          const stage = (payload as { stage?: string }).stage;
+          if (stage === "retrieving" || stage === "generating") handlers.onPhase?.(stage);
+        } else if (event === "context") handlers.onContext?.(payload as unknown as TravelContext);
         else if (event === "delta") {
           gotDelta = true;
           handlers.onDelta(String(payload.text ?? ""));
@@ -183,9 +188,24 @@ export async function fetchMapMarkers(city: string) {
  * @param city - 可选城市 ID；传入则仅返回该城市相关文档，省略则返回全部
  * @returns 含 `stats`（文档数、分块数）与 `documents` 摘要列表；HTTP 非 2xx 时抛出 Error
  */
-export async function fetchRagDocuments(city?: string) {
+export async function fetchKbAdminConfig() {
+  const res = await fetch("/api/travel/rag/admin-config");
+  if (!res.ok) throw new Error("Failed to load KB admin config.");
+  return res.json() as Promise<{ enabled: boolean }>;
+}
+
+export async function verifyKbAdminLogin(key: string) {
+  const res = await fetch("/api/travel/rag/admin-login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ key }),
+  });
+  return res.ok;
+}
+
+export async function fetchRagDocuments(city?: string, adminHeaders: Record<string, string> = {}) {
   const q = city ? `?city=${encodeURIComponent(city)}` : "";
-  const res = await fetch(`/api/travel/rag/documents${q}`);
+  const res = await fetch(`/api/travel/rag/documents${q}`, { headers: { ...adminHeaders } });
   if (!res.ok) throw new Error("Failed to load RAG documents.");
   return res.json() as Promise<{
     stats: { documents: number; chunks: number };
@@ -199,10 +219,29 @@ export async function fetchRagDocuments(city?: string) {
  * @param id - 文档唯一标识
  * @returns 文档详情（标题、正文、标签、分块等）；HTTP 非 2xx 时抛出 Error
  */
-export async function fetchRagDocument(id: string) {
-  const res = await fetch(`/api/travel/rag/documents/${encodeURIComponent(id)}`);
+export async function fetchRagDocument(id: string, adminHeaders: Record<string, string> = {}) {
+  const res = await fetch(`/api/travel/rag/documents/${encodeURIComponent(id)}`, {
+    headers: { ...adminHeaders },
+  });
   if (!res.ok) throw new Error("Failed to load document.");
   return res.json() as Promise<KbDocumentDetail>;
+}
+
+/**
+ * 删除 RAG 知识库文档及其分块、FTS 索引。
+ *
+ * @param id - 文档唯一标识
+ */
+export async function deleteRagDocument(id: string, adminHeaders: Record<string, string> = {}) {
+  const res = await fetch(`/api/travel/rag/documents/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+    headers: { ...adminHeaders },
+  });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => null)) as { error?: string } | null;
+    throw new Error(body?.error ?? "Failed to delete document.");
+  }
+  return res.json() as Promise<{ ok: boolean; id: string }>;
 }
 
 /**
@@ -270,18 +309,59 @@ export async function deleteConversation(id: string) {
  * @param body.tags - 可选标签列表
  * @returns 保存后的文档 JSON；HTTP 非 2xx 时抛出 Error
  */
-export async function upsertRagDocument(body: {
-  id?: string;
-  cityId?: string;
-  title: string;
-  content: string;
-  tags?: string[];
-}) {
+export async function upsertRagDocument(
+  body: {
+    id?: string;
+    cityId: string;
+    cityIdLocked?: boolean;
+    title: string;
+    content: string;
+    tags?: string[];
+  },
+  adminHeaders: Record<string, string> = {},
+) {
   const res = await fetch("/api/travel/rag/documents", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
+    headers: { "Content-Type": "application/json", ...adminHeaders },
+    body: JSON.stringify({ cityIdLocked: true, ...body }),
   });
-  if (!res.ok) throw new Error("Failed to save document.");
-  return res.json();
+  if (!res.ok) {
+    const body = (await res.json().catch(() => null)) as { error?: string; message?: string } | null;
+    throw new Error(body?.error ?? body?.message ?? "Failed to save document.");
+  }
+  return res.json() as Promise<{
+    id: string;
+    chunkCount: number;
+    embeddedChunks?: number;
+    cityIdResolved?: string | null;
+    cityIdWarning?: string;
+    document: KbDocumentDetail;
+  }>;
+}
+
+/** 上传 PDF，服务端解析文本并写入知识库（需运维 Header）。 */
+export async function uploadRagPdfDocument(
+  input: { cityId: string; title?: string; file: File },
+  adminHeaders: Record<string, string> = {},
+) {
+  const form = new FormData();
+  form.append("cityId", input.cityId);
+  form.append("file", input.file);
+  if (input.title?.trim()) form.append("title", input.title.trim());
+
+  const res = await fetch("/api/travel/rag/documents/upload-pdf", {
+    method: "POST",
+    headers: { ...adminHeaders },
+    body: form,
+  });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => null)) as { error?: string } | null;
+    throw new Error(body?.error ?? "Failed to upload PDF.");
+  }
+  return res.json() as Promise<{
+    id: string;
+    chunkCount: number;
+    cityIdResolved?: string | null;
+    document: KbDocumentDetail;
+  }>;
 }

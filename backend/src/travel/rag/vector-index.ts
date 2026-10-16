@@ -6,11 +6,6 @@ export interface VectorDocument {
   cityId: string | null;
 }
 
-/** @description 与 {@link tokenizeForSearch} 相同，保留别名供测试与旧引用。 */
-export function tokenizeForVector(text: string): string[] {
-  return tokenizeForSearch(text);
-}
-
 /**
  * @description 基于文档集合计算各 token 的逆文档频率（IDF），用于 TF-IDF 加权。
  * @param docs 向量索引中的全部文档
@@ -19,7 +14,7 @@ export function tokenizeForVector(text: string): string[] {
 function buildIdf(docs: VectorDocument[]): Map<string, number> {
   const docFreq = new Map<string, number>();
   for (const doc of docs) {
-    const seen = new Set(tokenizeForVector(doc.content));
+    const seen = new Set(tokenizeForSearch(doc.content));
     for (const token of seen) {
       docFreq.set(token, (docFreq.get(token) ?? 0) + 1);
     }
@@ -96,7 +91,7 @@ export class VectorIndex {
     this.vectors.clear();
 
     for (const doc of docs) {
-      const tokens = tokenizeForVector(doc.content);
+      const tokens = tokenizeForSearch(doc.content);
       this.vectors.set(doc.id, buildTfidfVector(tokens, this.idf));
     }
   }
@@ -116,7 +111,7 @@ export class VectorIndex {
   searchUnscoped(query: string, limit: number) {
     if (this.docs.length === 0 || limit <= 0) return [];
 
-    const queryVector = buildTfidfVector(tokenizeForVector(query), this.idf);
+    const queryVector = buildTfidfVector(tokenizeForSearch(query), this.idf);
     const scored: Array<{ id: string; score: number }> = [];
 
     for (const doc of this.docs) {

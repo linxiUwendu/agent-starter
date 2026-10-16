@@ -16,30 +16,35 @@ const emit = defineEmits<{
 
 <template>
   <div class="conversation-bar" data-testid="conversation-bar">
-    <button type="button" class="conv-new-btn" data-testid="new-conversation" @click="emit('newChat')">
+    <el-button size="small" data-testid="new-conversation" @click="emit('newChat')">
       + 新对话
-    </button>
-    <select
+    </el-button>
+    <el-select
       class="conv-select"
       data-testid="conversation-select"
-      :value="currentConversationId ?? ''"
+      :model-value="currentConversationId ?? ''"
+      placeholder="历史对话"
       :disabled="loading"
-      @change="emit('select', ($event.target as HTMLSelectElement).value)"
+      filterable
+      @update:model-value="(v: string) => v && emit('select', v)"
     >
-      <option value="" disabled>历史对话</option>
-      <option v-for="conv in conversations" :key="conv.id" :value="conv.id">
-        {{ conv.title }} ({{ conv.messageCount }})
-      </option>
-    </select>
-    <button
+      <el-option
+        v-for="conv in conversations"
+        :key="conv.id"
+        :label="`${conv.title} (${conv.messageCount})`"
+        :value="conv.id"
+      />
+    </el-select>
+    <el-button
       v-if="currentConversationId"
-      type="button"
-      class="conv-delete-btn"
+      size="small"
+      type="danger"
+      plain
       title="删除当前对话"
       @click="emit('delete', currentConversationId)"
     >
       删除
-    </button>
+    </el-button>
   </div>
 </template>
 
@@ -48,25 +53,11 @@ const emit = defineEmits<{
   display: flex;
   gap: 8px;
   align-items: center;
-  margin-top: 8px;
-}
-
-.conv-new-btn,
-.conv-delete-btn {
-  border: 1px solid var(--border, #ddd);
-  background: var(--bg-soft, #f8f8f8);
-  border-radius: 6px;
-  padding: 4px 10px;
-  font-size: 0.8rem;
-  cursor: pointer;
+  width: 100%;
 }
 
 .conv-select {
   flex: 1;
   min-width: 0;
-  font-size: 0.82rem;
-  padding: 4px 8px;
-  border-radius: 6px;
-  border: 1px solid var(--border, #ddd);
 }
 </style>

@@ -1,4 +1,4 @@
-import { Injectable, Logger } from "@nestjs/common";
+import { BadRequestException, Injectable, Logger } from "@nestjs/common";
 import type { Response } from "express";
 import { randomUUID } from "node:crypto";
 
@@ -8,15 +8,15 @@ import { CursorAgentService } from "../chat/cursor-agent.service";
 import { ConversationRepository } from "./database/repositories/conversation.repository";
 import { PoiService } from "./poi.service";
 import { RagService } from "./rag/rag.service";
-import { DEFAULT_CITY, getTravelSystemPrompt, resolveCityId } from "./travel.constants";
+import {
+  DEFAULT_CITY,
+  getTravelSystemPrompt,
+  resolveCityId,
+  resolveKbDocumentCity,
+} from "./travel.constants";
+import { extractTextFromPdf } from "./rag/pdf-text.util";
 import { TravelToolsService } from "./travel-tools.service";
-import type {
-  ConversationDetail,
-  ConversationSummary,
-  GetItineraryParams,
-  SearchPoiParams,
-  TravelContext,
-} from "./travel.types";
+import type { ConversationDetail, ConversationSummary, TravelContext } from "./travel.types";
 
 /**
  * 旅游模块统一门面：HTTP 层只依赖此 Service。
@@ -32,7 +32,7 @@ export class TravelService {
     private readonly poiService: PoiService,
     private readonly ragService: RagService,
     private readonly conversations: ConversationRepository,
-  ) {}
+  ) { }
 
   // ── Health / Meta ─────────────────────────────────────────
 
@@ -48,10 +48,6 @@ export class TravelService {
     };
   }
 
-  getToolDefinitions() {
-    return this.travelTools.getToolDefinitions();
-  }
-
   // ── POI ───────────────────────────────────────────────────
 
   listCities() {
@@ -62,36 +58,11 @@ export class TravelService {
     return this.poiService.getFoodGuide(resolveCityId(city));
   }
 
-  searchPois(params: SearchPoiParams) {
-    return this.poiService.searchPoi(params);
-  }
-
-  getPhotoSpots(city?: string, query?: string, limit = 20) {
-    return this.poiService.getPhotoSpots({ city: resolveCityId(city), query, limit });
-  }
-
-  listItineraries(city?: string) {
-    return this.poiService.listItineraries(resolveCityId(city));
-  }
-
-  suggestItinerary(params: GetItineraryParams) {
-    return this.poiService.findItinerary({ ...params, city: resolveCityId(params.city) });
-  }
-
-  getItinerary(id: string) {
-    return this.poiService.getItinerary(id);
-  }
-
   getMapMarkers(city?: string) {
     return this.poiService.getAllMapMarkers(resolveCityId(city));
   }
 
   // ── RAG ───────────────────────────────────────────────────
-
-  ragSearch(q: string, city?: string, _provider?: string) {
-    const cityId = resolveCityId(city);
-    return this.ragService.retrieveWithMetaAsync(q, cityId, 8);
-  }
 
   listRagDocuments(city?: string) {
     return {
@@ -104,16 +75,59 @@ export class TravelService {
     return this.ragService.getDocument(id);
   }
 
-  upsertRagDocument(input: {
+  async upsertRagDocument(input: {
     id?: string;
     cityId?: string | null;
+    cityIdLocked?: boolean;
     title: string;
     content: string;
     tags?: string[];
+    source?: string;
   }) {
-    return this.ragService.upsertDocument({
+    const { cityId: resolvedCityId, warning: cityIdWarning } = resolveKbDocumentCity({
+      cityId: input.cityId,
+      title: input.title,
+      content: input.content,
+      cityIdLocked: input.cityIdLocked,
+    });
+
+    if (!resolvedCityId) {
+      throw new BadRequestException({ error: "cityId is required for knowledge base documents." });
+    }
+
+    if (!this.poiService.getCity(resolvedCityId)) {
+      throw new BadRequestException({
+        error: `Invalid cityId: ${resolvedCityId}. Use an id from GET /api/travel/cities.`,
+      });
+    }
+
+    const saved = await this.ragService.upsertDocument({
       ...input,
-      cityId: input.cityId ? resolveCityId(input.cityId) : null,
+      cityId: resolvedCityId,
+    });
+
+    return { ...saved, cityIdResolved: resolvedCityId, cityIdWarning };
+  }
+
+  async upsertRagDocumentFromPdf(input: {
+    cityId: string;
+    title?: string;
+    filename: string;
+    buffer: Buffer;
+  }) {
+    const content = await extractTextFromPdf(input.buffer);
+    const title =
+      input.title?.trim() ||
+      input.filename.replace(/\.pdf$/i, "").trim() ||
+      "PDF 文档";
+
+    return this.upsertRagDocument({
+      cityId: resolveCityId(input.cityId),
+      cityIdLocked: true,
+      title,
+      content,
+      tags: ["pdf"],
+      source: "pdf",
     });
   }
 
@@ -206,7 +220,7 @@ export class TravelService {
     return [
       getTravelSystemPrompt(context.cityName),
       "",
-      this.travelTools.formatContextForPrompt(context),
+      this.travelTools.formatContextForPrompt(context, { compact: true }),
       "",
       "下面是当前对话。请基于上面的数据回答最后一个用户问题。",
       "",
@@ -253,30 +267,14 @@ export class TravelService {
     cityHint?: string,
     conversationId?: string,
   ) {
-    const context = await this.travelTools.runToolLoop(messages, cityHint);
-    const prompt = this.buildTravelPrompt(messages, context);
     const sse = createSseSession(res);
     const lastUser = [...messages].reverse().find((m) => m.role === "user");
     const userContent = lastUser?.content ?? "";
 
     sse.send("start", {});
-    sse.send("context", {
-      city: context.city,
-      cityName: context.cityName,
-      pois: context.pois,
-      photoSpots: context.photoSpots,
-      itinerary: context.itinerary,
-      toolCalls: context.toolCalls,
-      ragChunks: context.ragChunks,
-      ragMeta: context.ragMeta,
-      toolLoopSteps: context.toolLoopSteps,
-    });
+    sse.send("phase", { stage: "retrieving" });
 
-    this.logger.log(
-      `travel chat city=${context.city} tools=${context.toolCalls.length} pois=${context.pois.length} rag=${context.ragChunks.length}`,
-    );
-
-    const finish = (answer: string, fallback = false) => {
+    const finish = (answer: string, context: TravelContext, fallback = false) => {
       let savedConversationId = conversationId;
       if (userContent && answer) {
         savedConversationId = this.appendExchange(conversationId, userContent, answer, context.city);
@@ -289,18 +287,60 @@ export class TravelService {
       });
     };
 
+    const sendContext = (context: TravelContext) => {
+      sse.send("context", {
+        city: context.city,
+        cityName: context.cityName,
+        pois: context.pois,
+        photoSpots: context.photoSpots,
+        itinerary: context.itinerary,
+        toolCalls: context.toolCalls,
+        ragChunks: context.ragChunks,
+        ragMeta: context.ragMeta,
+        toolLoopSteps: context.toolLoopSteps,
+      });
+    };
+
+    const loopStarted = Date.now();
+    const context = await this.travelTools.runToolLoop(messages, cityHint);
+    this.logger.log(
+      `travel chat context=${JSON.stringify(context)}, loopMs=${Date.now() - loopStarted}ms`,
+    );
+    const loopMs = Date.now() - loopStarted;
+    sendContext(context);
+
+    this.logger.log(
+      `travel chat retrieve=${loopMs}ms city=${context.city} tools=${context.toolCalls.length} pois=${context.pois.length} rag=${context.ragChunks.length}`,
+    );
+
+    sse.send("phase", { stage: "generating" });
+
+    const prompt = this.buildTravelPrompt(messages, context);
+
     try {
+      const genStarted = Date.now();
       const answer = await this.cursorAgent.run(prompt, sse.pushDelta);
+      this.logger.log(
+        `travel chat generate=${Date.now() - genStarted}ms answerLen=${answer.length} streamed=${sse.streamedChars()}`,
+      );
       if (sse.streamedChars() === 0 && answer) {
         await streamTextAsDeltas(sse.pushDelta, answer);
       }
-      finish(answer);
+      finish(answer, context);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown error";
       this.logger.warn(`cursor-agent failed, using fallback: ${message}`);
-      const fallback = this.buildFallbackAnswer(context, userContent);
+      let fallback = this.buildFallbackAnswer(context, userContent);
+      if (/ETIMEDOUT|ECONNRESET|\[unavailable\]/i.test(message)) {
+        fallback = [
+          fallback,
+          "",
+          "---",
+          "*Cursor 云端连接超时，以上为基于 POI/RAG 检索的离线摘要。请检查网络或代理，或在 `.env` 中设 `MOCK_AGENT=true` 做本地演示。*",
+        ].join("\n");
+      }
       await streamTextAsDeltas(sse.pushDelta, fallback);
-      finish(fallback, true);
+      finish(fallback, context, true);
     }
   }
 }

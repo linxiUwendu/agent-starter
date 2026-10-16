@@ -18,36 +18,74 @@ export type ToolLoopHistoryEntry = {
 
 const VALID_TOOL_NAMES = new Set<string>(TRAVEL_TOOLS.map((t) => t.name));
 
+/** 从模型输出中提取含 "action" 的 JSON 对象（兼容前后夹杂说明文字） */
+export function extractToolStepJson(raw: string): string {
+  const trimmed = raw.trim();
+  if (!trimmed) return trimmed;
+
+  const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  if (fenced?.[1]?.trim()) return fenced[1].trim();
+
+  const actionIdx = trimmed.search(/"action"\s*:/);
+  if (actionIdx < 0) return trimmed;
+
+  const start = trimmed.lastIndexOf("{", actionIdx);
+  if (start < 0) return trimmed;
+
+  let depth = 0;
+  for (let i = start; i < trimmed.length; i++) {
+    const ch = trimmed[i];
+    if (ch === "{") depth += 1;
+    else if (ch === "}") {
+      depth -= 1;
+      if (depth === 0) return trimmed.slice(start, i + 1);
+    }
+  }
+
+  return trimmed;
+}
+
+function parseToolStepObject(parsed: Record<string, unknown>): AgentToolStep | null {
+  if (parsed.action === "finish") {
+    return { action: "finish", reason: typeof parsed.reason === "string" ? parsed.reason : undefined };
+  }
+
+  if (parsed.action === "tool_calls" && Array.isArray(parsed.calls)) {
+    const calls: AgentToolCall[] = [];
+    for (const item of parsed.calls) {
+      if (!item || typeof item !== "object" || Array.isArray(item)) continue;
+      const obj = item as Record<string, unknown>;
+      const name = String(obj.name ?? "");
+      if (!VALID_TOOL_NAMES.has(name)) continue;
+      const args =
+        obj.args && typeof obj.args === "object" && !Array.isArray(obj.args)
+          ? (obj.args as Record<string, unknown>)
+          : {};
+      calls.push({ name: name as TravelToolName, args });
+    }
+    if (calls.length) return { action: "tool_calls", calls };
+  }
+
+  return null;
+}
+
 export function parseAgentToolStep(raw: string): AgentToolStep {
   const trimmed = raw.trim();
   if (!trimmed) return { action: "finish", reason: "empty response" };
 
-  const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i);
-  const candidate = (fenced?.[1] ?? trimmed).trim();
+  const candidates = [extractToolStepJson(trimmed), trimmed];
+  const seen = new Set<string>();
 
-  try {
-    const parsed = JSON.parse(candidate) as Record<string, unknown>;
-    if (parsed.action === "finish") {
-      return { action: "finish", reason: typeof parsed.reason === "string" ? parsed.reason : undefined };
+  for (const candidate of candidates) {
+    if (!candidate || seen.has(candidate)) continue;
+    seen.add(candidate);
+    try {
+      const parsed = JSON.parse(candidate) as Record<string, unknown>;
+      const step = parseToolStepObject(parsed);
+      if (step) return step;
+    } catch {
+      // try next candidate
     }
-
-    if (parsed.action === "tool_calls" && Array.isArray(parsed.calls)) {
-      const calls: AgentToolCall[] = [];
-      for (const item of parsed.calls) {
-        if (!item || typeof item !== "object" || Array.isArray(item)) continue;
-        const obj = item as Record<string, unknown>;
-        const name = String(obj.name ?? "");
-        if (!VALID_TOOL_NAMES.has(name)) continue;
-        const args =
-          obj.args && typeof obj.args === "object" && !Array.isArray(obj.args)
-            ? (obj.args as Record<string, unknown>)
-            : {};
-        calls.push({ name: name as TravelToolName, args });
-      }
-      if (calls.length) return { action: "tool_calls", calls };
-    }
-  } catch {
-    // fall through
   }
 
   return { action: "finish", reason: "unparseable agent step" };
@@ -106,6 +144,7 @@ export function mockAgentToolStep(
   city: string,
   iteration: number,
   history: ToolLoopHistoryEntry[],
+  options?: { skipSearchRag?: boolean },
 ): string {
   if (iteration > 0 || history.length > 0) {
     return JSON.stringify({ action: "finish", reason: "mock: tools executed" });
@@ -136,7 +175,9 @@ export function mockAgentToolStep(
     name: "search_poi",
     args: { city, type: wantsFood ? "food" : wantsPhoto ? "attraction" : "all", limit: 8 },
   });
-  calls.push({ name: "search_rag", args: { city, query: message, limit: 5 } });
+  if (!options?.skipSearchRag) {
+    calls.push({ name: "search_rag", args: { city, query: message, limit: 5 } });
+  }
 
   const seen = new Set<string>();
   const unique = calls.filter((call) => {
