@@ -11,7 +11,6 @@ export type AgentToolStep =
   | { action: "finish"; reason?: string };
 
 export type ToolLoopHistoryEntry = {
-  iteration: number;
   calls: AgentToolCall[];
   summary: string;
 };
@@ -98,6 +97,8 @@ export function buildToolLoopPrompt(input: {
   iteration: number;
   maxIterations: number;
   history: ToolLoopHistoryEntry[];
+  ragPrefetched?: boolean;
+  singleAgentRound?: boolean;
 }): string {
   const toolsJson = JSON.stringify(
     TRAVEL_TOOLS.map((t) => ({ name: t.name, description: t.description, parameters: t.parameters })),
@@ -110,8 +111,8 @@ export function buildToolLoopPrompt(input: {
       ? "（尚无工具调用结果）"
       : input.history
           .map(
-            (h) =>
-              `第 ${h.iteration + 1} 轮:\n${h.calls.map((c) => `- ${c.name}(${JSON.stringify(c.args)})`).join("\n")}\n结果摘要: ${h.summary}`,
+            (h, i) =>
+              `第 ${i + 1} 轮:\n${h.calls.map((c) => `- ${c.name}(${JSON.stringify(c.args)})`).join("\n")}\n结果摘要: ${h.summary}`,
           )
           .join("\n\n");
 
@@ -127,6 +128,12 @@ export function buildToolLoopPrompt(input: {
     historyText,
     "",
     `当前为第 ${input.iteration + 1}/${input.maxIterations} 轮。`,
+    input.ragPrefetched
+      ? "（注意：服务端已预检索 search_rag，若无新关键词请勿重复调用 search_rag。）"
+      : "",
+    input.singleAgentRound && input.iteration === 0
+      ? "（本轮为唯一一次 Agent 规划：请一次性列出本问题所需的全部 tool_calls，不要分多轮。）"
+      : "",
     "",
     "请判断是否需要继续调用工具收集数据。",
     "- 若需要更多 POI/行程/机位/攻略，输出 tool_calls",
@@ -142,11 +149,10 @@ export function buildToolLoopPrompt(input: {
 export function mockAgentToolStep(
   message: string,
   city: string,
-  iteration: number,
   history: ToolLoopHistoryEntry[],
   options?: { skipSearchRag?: boolean },
 ): string {
-  if (iteration > 0 || history.length > 0) {
+  if (history.length > 0) {
     return JSON.stringify({ action: "finish", reason: "mock: tools executed" });
   }
 

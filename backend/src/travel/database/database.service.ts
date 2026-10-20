@@ -4,6 +4,7 @@ import Database from "better-sqlite3";
 import fs from "node:fs";
 import path from "node:path";
 
+import { applyRuntimeMigrations } from "./schema-migrations";
 import { readBootstrapStats } from "./sql-fragments";
 
 @Injectable()
@@ -33,6 +34,7 @@ export class DatabaseService implements OnModuleInit {
     this.db = new Database(this.dbPath);
     this.db.pragma("journal_mode = WAL");
     this.db.pragma("foreign_keys = ON");
+    applyRuntimeMigrations(this.db);
 
     const stats = readBootstrapStats(this.db);
     if (stats.cities === 0) {

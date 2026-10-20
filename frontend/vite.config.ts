@@ -14,6 +14,7 @@ export default defineConfig(({ mode }) => {
         "/api": {
           target: `http://127.0.0.1:${apiPort}`,
           changeOrigin: true,
+          cookieDomainRewrite: "",
           configure: (proxy) => {
             proxy.on("proxyRes", (proxyRes) => {
               const contentType = proxyRes.headers["content-type"] ?? "";

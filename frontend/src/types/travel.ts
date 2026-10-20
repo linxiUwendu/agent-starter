@@ -85,12 +85,22 @@ export interface TravelContext {
   toolLoopSteps?: ToolLoopStep[];
 }
 
-export interface ToolLoopStep {
-  iteration: number;
-  action: "tool_calls" | "finish";
-  calls?: Array<{ name: string; args: Record<string, unknown>; resultCount: number }>;
-  reason?: string;
-}
+export type ToolLoopStep =
+  | {
+      action: "prefetch";
+      calls?: Array<{ name: string; args: Record<string, unknown>; resultCount: number }>;
+      reason?: string;
+    }
+  | {
+      action: "tool_calls";
+      iteration: number;
+      calls?: Array<{ name: string; args: Record<string, unknown>; resultCount: number }>;
+    }
+  | {
+      action: "finish";
+      iteration: number;
+      reason?: string;
+    };
 
 export interface RagRetrieveMeta {
   durationMs: number;

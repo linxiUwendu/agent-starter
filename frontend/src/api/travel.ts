@@ -137,6 +137,7 @@ export async function sendTravelChat(
 ) {
   return fetch("/api/travel/chat", {
     method: "POST",
+    credentials: "include",
     headers: { "Content-Type": "application/json" },
     signal,
     body: JSON.stringify({
@@ -250,7 +251,9 @@ export async function deleteRagDocument(id: string, adminHeaders: Record<string,
  * @returns 会话摘要数组（id、标题、城市、更新时间等）；HTTP 非 2xx 时抛出 Error
  */
 export async function fetchConversations() {
-  const res = await fetch("/api/travel/conversations");
+  const res = await fetch("/api/travel/conversations", {
+    credentials: "include",
+  });
   if (!res.ok) throw new Error("Failed to load conversations.");
   return res.json() as Promise<import("../types/travel").ConversationSummary[]>;
 }
@@ -262,7 +265,9 @@ export async function fetchConversations() {
  * @returns 会话详情对象；HTTP 非 2xx 时抛出 Error
  */
 export async function fetchConversation(id: string) {
-  const res = await fetch(`/api/travel/conversations/${encodeURIComponent(id)}`);
+  const res = await fetch(`/api/travel/conversations/${encodeURIComponent(id)}`, {
+    credentials: "include",
+  });
   if (!res.ok) throw new Error("Failed to load conversation.");
   return res.json() as Promise<import("../types/travel").ConversationDetail>;
 }
@@ -276,6 +281,7 @@ export async function fetchConversation(id: string) {
 export async function createConversation(city?: string) {
   const res = await fetch("/api/travel/conversations", {
     method: "POST",
+    credentials: "include",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ city, title: "新对话" }),
   });
@@ -292,6 +298,7 @@ export async function createConversation(city?: string) {
 export async function deleteConversation(id: string) {
   const res = await fetch(`/api/travel/conversations/${encodeURIComponent(id)}`, {
     method: "DELETE",
+    credentials: "include",
   });
   if (!res.ok) throw new Error("Failed to delete conversation.");
 }

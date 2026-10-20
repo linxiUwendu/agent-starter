@@ -5,7 +5,6 @@ import path from "node:path";
 
 import { AGENT_NAME, ChatMessage, SYSTEM_PROMPT } from "../agent/agent.constants";
 import { streamTextCharByChar } from "../common/sse.util";
-import { mockAgentToolStep, parseAgentToolStep } from "../travel/travel-tools.util";
 import {
   buildCursorAgentShellCommand,
   computeStreamDelta,
@@ -207,13 +206,6 @@ export class CursorAgentService {
    * @description 非流式收集 cursor-agent 完整输出，供 Tool Loop 规划轮使用。
    */
   async runCollect(prompt: string): Promise<string> {
-    if (this.mockAgent && prompt.includes("工具调度器")) {
-      const userMessage = prompt.match(/用户问题:\s*(.+)/)?.[1]?.trim() ?? "";
-      const city = prompt.match(/city_id=([a-z0-9_]+)/i)?.[1] ?? "chengdu";
-      const raw = mockAgentToolStep(userMessage, city, 0, []);
-      const step = parseAgentToolStep(raw);
-      if (step.action === "tool_calls") return raw;
-    }
     if (this.mockAgent) {
       return generateMockAnswer(prompt);
     }

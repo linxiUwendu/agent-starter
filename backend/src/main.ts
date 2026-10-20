@@ -1,11 +1,24 @@
 import { ValidationPipe } from "@nestjs/common";
 import { NestFactory } from "@nestjs/core";
 import { ConfigService } from "@nestjs/config";
+import cookieParser from "cookie-parser";
+import type { NextFunction, Request, Response } from "express";
+import fs from "node:fs";
+import path from "node:path";
 
 import { AppModule } from "./app.module";
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+  app.use(cookieParser());
+
+  const frontendIndex = path.join(__dirname, "../../frontend/dist/index.html");
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    if (req.method !== "GET" || req.path.startsWith("/api")) return next();
+    if (req.path.includes(".")) return next();
+    if (!fs.existsSync(frontendIndex)) return next();
+    return res.sendFile(frontendIndex);
+  });
 
   app.useGlobalPipes(
     new ValidationPipe({

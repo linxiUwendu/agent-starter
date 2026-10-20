@@ -8,15 +8,18 @@ import {
   Param,
   Post,
   Query,
+  Req,
   Res,
   UploadedFile,
   UseGuards,
   UseInterceptors,
 } from "@nestjs/common";
+import type { Request } from "express";
 import { ConfigService } from "@nestjs/config";
 import { FileInterceptor } from "@nestjs/platform-express";
 import type { Response } from "express";
 
+import { getAuthUser, JwtAuthGuard, OptionalJwtAuthGuard } from "../auth/auth.guard";
 import { ChatMessageDto } from "../chat/dto/chat-message.dto";
 import { TravelService } from "./travel.service";
 import { TravelChatRequestDto, UpsertKbDocumentDto } from "./dto/travel.dto";
@@ -145,38 +148,55 @@ export class TravelController {
   }
 
   @Get("conversations")
-  listConversations() {
-    return this.travel.listConversations();
+  @UseGuards(JwtAuthGuard)
+  listConversations(@Req() req: Request) {
+    return this.travel.listConversations(getAuthUser(req)!.id);
   }
 
   @Post("conversations")
-  createConversation(@Body() body: { city?: string; title?: string }) {
+  @UseGuards(JwtAuthGuard)
+  createConversation(@Req() req: Request, @Body() body: { city?: string; title?: string }) {
     return this.travel.createConversation(
+      getAuthUser(req)!.id,
       body.city ? resolveCityId(body.city) : undefined,
       body.title?.trim() || "新对话",
     );
   }
 
   @Get("conversations/:id")
-  getConversation(@Param("id") id: string) {
-    const conversation = this.travel.getConversation(id);
+  @UseGuards(JwtAuthGuard)
+  getConversation(@Req() req: Request, @Param("id") id: string) {
+    const conversation = this.travel.getConversation(id, getAuthUser(req)!.id);
     if (!conversation) throw new BadRequestException({ error: "Conversation not found." });
     return conversation;
   }
 
   @Delete("conversations/:id")
-  deleteConversation(@Param("id") id: string) {
-    const ok = this.travel.deleteConversation(id);
+  @UseGuards(JwtAuthGuard)
+  deleteConversation(@Req() req: Request, @Param("id") id: string) {
+    const ok = this.travel.deleteConversation(id, getAuthUser(req)!.id);
     if (!ok) throw new BadRequestException({ error: "Conversation not found." });
     return { ok: true, id };
   }
 
   @Post("chat")
-  async chat(@Body() body: TravelChatRequestDto, @Res() res: Response) {
+  @UseGuards(OptionalJwtAuthGuard)
+  async chat(@Req() req: Request, @Body() body: TravelChatRequestDto, @Res() res: Response) {
     const messages = normalizeMessages(body.messages ?? []);
     if (messages.length === 0) {
       throw new BadRequestException({ error: "messages is required." });
     }
-    await this.travel.streamTravelChat(messages, res, body.city, body.conversationId);
+    const user = getAuthUser(req);
+    try {
+      await this.travel.streamTravelChat(messages, res, body.city, body.conversationId, user?.id);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Travel chat failed.";
+      if (!res.headersSent) {
+        throw new BadRequestException({ error: message });
+      }
+      if (!res.writableEnded) {
+        res.end();
+      }
+    }
   }
 }

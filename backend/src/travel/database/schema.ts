@@ -80,16 +80,34 @@ CREATE VIRTUAL TABLE IF NOT EXISTS kb_chunks_fts USING fts5(
   tokenize='unicode61'
 );
 
+CREATE TABLE IF NOT EXISTS users (
+  id           TEXT PRIMARY KEY,
+  email        TEXT NOT NULL UNIQUE,
+  display_name TEXT,
+  avatar_url   TEXT,
+  google_sub   TEXT NOT NULL UNIQUE,
+  created_at   TEXT NOT NULL,
+  updated_at   TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS user_memory (
+  user_id     TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  content_md  TEXT NOT NULL DEFAULT '',
+  updated_at  TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS conversations (
   id         TEXT PRIMARY KEY,
   title      TEXT NOT NULL,
   city_id    TEXT REFERENCES cities(id) ON DELETE SET NULL,
+  user_id    TEXT REFERENCES users(id) ON DELETE SET NULL,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_conversations_updated ON conversations(updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_conversations_city    ON conversations(city_id);
+CREATE INDEX IF NOT EXISTS idx_conversations_user    ON conversations(user_id, updated_at DESC);
 
 CREATE TABLE IF NOT EXISTS conversation_messages (
   id               TEXT PRIMARY KEY,

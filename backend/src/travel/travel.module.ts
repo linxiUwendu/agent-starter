@@ -1,7 +1,8 @@
 import { Module } from "@nestjs/common";
 
+import { AuthModule } from "../auth/auth.module";
 import { ChatModule } from "../chat/chat.module";
-import { DatabaseService } from "./database/database.service";
+import { DatabaseModule } from "./database/database.module";
 import { ConversationRepository } from "./database/repositories/conversation.repository";
 import { KbRepository } from "./database/repositories/kb.repository";
 import { PoiRepository } from "./database/repositories/poi.repository";
@@ -18,8 +19,8 @@ const repositories = [PoiRepository, KbRepository, ConversationRepository];
 const domainServices = [PoiService, EmbeddingService, RagService, TravelToolsService, TravelService];
 
 @Module({
-  imports: [ChatModule],
+  imports: [DatabaseModule, AuthModule, ChatModule],
   controllers: [TravelController],
-  providers: [DatabaseService, KbAdminGuard, ...repositories, ...domainServices],
+  providers: [KbAdminGuard, ...repositories, ...domainServices],
 })
 export class TravelModule {}

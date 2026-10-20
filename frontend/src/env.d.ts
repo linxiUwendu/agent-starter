@@ -2,6 +2,7 @@
 
 interface ImportMetaEnv {
   readonly VITE_KB_ADMIN_KEY?: string;
+  readonly VITE_GOOGLE_CLIENT_ID?: string;
 }
 
 interface ImportMeta {

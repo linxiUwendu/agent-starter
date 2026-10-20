@@ -1,4 +1,5 @@
-import { prefetchRagRetrieval, formatPrefetchedRagBlock } from "./travel-prefetch.util";
+import { prefetchRagRetrieval } from "./travel-prefetch.util";
+import type { TravelContext } from "./travel.types";
 
 describe("travel-prefetch", () => {
   it("prefetchRagRetrieval merges chunks into context", async () => {
@@ -20,7 +21,7 @@ describe("travel-prefetch", () => {
       },
     };
 
-    const context = {
+    const context: TravelContext = {
       city: "chengdu",
       cityName: "成都",
       pois: [],
@@ -28,19 +29,20 @@ describe("travel-prefetch", () => {
       itinerary: null,
       toolCalls: [],
       ragChunks: [],
+      ragMeta: null,
     };
 
-    const { step, injectedPromptBlock } = await prefetchRagRetrieval(
+    const step = await prefetchRagRetrieval(
       deps as never,
-      context as never,
+      context,
       "成都火锅",
       "chengdu",
     );
 
-    expect(step?.iteration).toBe(-1);
+    expect(step?.action).toBe("prefetch");
     expect(context.ragChunks).toHaveLength(1);
-    expect(injectedPromptBlock).toContain("知识库预检索");
-    expect(formatPrefetchedRagBlock(context as never)).toContain("成都美食");
+    expect(context.toolCalls).toHaveLength(1);
+    expect(context.toolCalls[0]?.name).toBe("search_rag");
   });
 
   it("skips prefetch for very short query", async () => {
@@ -58,8 +60,8 @@ describe("travel-prefetch", () => {
       ragChunks: [],
     };
 
-    const result = await prefetchRagRetrieval(deps as never, context as never, "a", "chengdu");
-    expect(result.step).toBeNull();
+    const step = await prefetchRagRetrieval(deps as never, context as never, "a", "chengdu");
+    expect(step).toBeNull();
     expect(deps.ragService.retrieveWithMetaAsync).not.toHaveBeenCalled();
   });
 });

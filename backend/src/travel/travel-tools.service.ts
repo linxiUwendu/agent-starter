@@ -58,6 +58,15 @@ export class TravelToolsService {
     return this.config.get<string>("TRAVEL_RAG_PREFETCH") !== "false";
   }
 
+  /** agent Planner 下最多几轮「调工具」；默认 1，避免每轮 runCollect（常 15–50s/轮） */
+  private get agentPlannerMaxToolRounds() {
+    const raw = this.config.get<string>("TRAVEL_AGENT_PLANNER_MAX_ROUNDS");
+    if (raw != null && raw !== "") {
+      return Math.max(1, Number(raw) || 1);
+    }
+    return this.toolPlannerMode === "agent" ? 1 : this.maxIterations;
+  }
+
   getToolDefinitions() {
     return TRAVEL_TOOLS;
   }
@@ -80,19 +89,6 @@ export class TravelToolsService {
     };
   }
 
-  executeTool(name: TravelToolName, args: Record<string, unknown> = {}) {
-    return executeTravelTool(this.toolDeps, name, args) as unknown | Promise<unknown>;
-  }
-
-  mergeToolResult(
-    context: TravelContext,
-    name: TravelToolName,
-    args: Record<string, unknown>,
-    result: unknown,
-  ): number {
-    return mergeTravelToolResult(context, name, args, result);
-  }
-
   /**
    * RAG 预检索 + Tool Loop。
    * 无 OpenAI 时默认 rules 规划（毫秒级）；最终回答由 TravelService 调 cursor-agent。
@@ -113,25 +109,36 @@ export class TravelToolsService {
 
     let skipSearchRag = false;
     if (this.ragPrefetchEnabled) {
-      const prefetch = await prefetchRagRetrieval(
+      const prefetchStep = await prefetchRagRetrieval(
         this.toolDeps,
         context,
         userMessage,
         resolvedCity,
       );
-      if (prefetch.step) {
-        toolLoopSteps.push(prefetch.step);
+      console.log(prefetchStep, '============> prefetchStep');
+      if (prefetchStep) {
+        toolLoopSteps.push(prefetchStep);
         skipSearchRag = true;
         this.logger.log(`RAG prefetch chunks=${context.ragChunks.length}`);
       }
     }
-    this.logger.log(context, '=========> context 1', this.toolDeps);
-
     for (let iteration = 0; iteration < this.maxIterations; iteration++) {
+      if (!useRulesPlanner && history.length >= this.agentPlannerMaxToolRounds) {
+        toolLoopSteps.push({
+          iteration,
+          action: "finish",
+          reason: `agent_planner_max_tool_rounds=${this.agentPlannerMaxToolRounds}`,
+        });
+        this.logger.log(
+          `Tool planner agent capped after ${history.length} tool round(s); skipping further runCollect`,
+        );
+        break;
+      }
+
       let rawStep: string;
 
       if (useRulesPlanner) {
-        rawStep = mockAgentToolStep(userMessage, resolvedCity, iteration, history, {
+        rawStep = mockAgentToolStep(userMessage, resolvedCity, history, {
           skipSearchRag,
         });
       } else {
@@ -142,6 +149,8 @@ export class TravelToolsService {
           iteration,
           maxIterations: this.maxIterations,
           history,
+          ragPrefetched: skipSearchRag,
+          singleAgentRound: this.agentPlannerMaxToolRounds <= 1,
         });
         const plannerStarted = Date.now();
         rawStep = await this.cursorAgent.runCollect(plannerPrompt);
@@ -151,6 +160,7 @@ export class TravelToolsService {
       }
 
       let step = parseAgentToolStep(rawStep);
+      console.log(step, '============> step', rawStep, iteration, history.length, useRulesPlanner, skipSearchRag);
       if (
         !useRulesPlanner &&
         step.action === "finish" &&
@@ -161,7 +171,7 @@ export class TravelToolsService {
         this.logger.warn(
           `Tool planner non-JSON; falling back to rules. preview=${rawStep.slice(0, 280)}`,
         );
-        rawStep = mockAgentToolStep(userMessage, resolvedCity, iteration, history, {
+        rawStep = mockAgentToolStep(userMessage, resolvedCity, history, {
           skipSearchRag,
         });
         step = parseAgentToolStep(rawStep);
@@ -174,18 +184,18 @@ export class TravelToolsService {
         break;
       }
 
-      const executedCalls: ToolLoopStep["calls"] = [];
+      const executedCalls: TravelContext["toolCalls"] = [];
       const summaries: string[] = [];
 
       for (const call of step.calls) {
-        const result = await Promise.resolve(this.executeTool(call.name, call.args));
-        const resultCount = this.mergeToolResult(context, call.name, call.args, result);
+        const result = await Promise.resolve(executeTravelTool(this.toolDeps, call.name, call.args));
+        const resultCount = mergeTravelToolResult(context, call.name, call.args, result);
         executedCalls.push({ name: call.name, args: call.args, resultCount });
         summaries.push(`${call.name}: ${summarizeToolResult(call.name, result)}`);
       }
 
       toolLoopSteps.push({ iteration, action: "tool_calls", calls: executedCalls });
-      history.push({ iteration, calls: step.calls, summary: summaries.join("; ") });
+      history.push({ calls: step.calls, summary: summaries.join("; ") });
     }
 
     context.toolLoopSteps = toolLoopSteps;
@@ -266,7 +276,7 @@ export class TravelToolsService {
     if (!compact && context.toolLoopSteps?.length) {
       lines.push("", "### Tool Loop 轮次");
       for (const step of context.toolLoopSteps) {
-        if (step.iteration < 0) {
+        if (step.action === "prefetch") {
           lines.push(
             `- 预检索: ${step.calls?.map((c) => c.name).join(", ") ?? "—"}${step.reason ? ` (${step.reason})` : ""}`,
           );

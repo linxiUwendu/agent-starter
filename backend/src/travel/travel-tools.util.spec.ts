@@ -30,11 +30,11 @@ describe("travel-tools.util", () => {
   });
 
   it("mock planner returns tools then finish", () => {
-    const round1 = parseAgentToolStep(mockAgentToolStep("成都美食推荐", "chengdu", 0, []));
+    const round1 = parseAgentToolStep(mockAgentToolStep("成都美食推荐", "chengdu", []));
     expect(round1.action).toBe("tool_calls");
     const round2 = parseAgentToolStep(
-      mockAgentToolStep("成都美食推荐", "chengdu", 1, [
-        { iteration: 0, calls: [{ name: "recommend_food", args: { city: "chengdu" } }], summary: "ok" },
+      mockAgentToolStep("成都美食推荐", "chengdu", [
+        { calls: [{ name: "recommend_food", args: { city: "chengdu" } }], summary: "ok" },
       ]),
     );
     expect(round2.action).toBe("finish");

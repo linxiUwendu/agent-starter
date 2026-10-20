@@ -1,10 +1,13 @@
 import { BadRequestException, Injectable, Logger } from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
 import type { Response } from "express";
 import { randomUUID } from "node:crypto";
 
+import { AuthService } from "../auth/auth.service";
 import { ChatMessage } from "../agent/agent.constants";
 import { createSseSession, streamTextAsDeltas } from "../common/sse.util";
 import { CursorAgentService } from "../chat/cursor-agent.service";
+import { formatMemoryForPrompt } from "./user-memory.util";
 import { ConversationRepository } from "./database/repositories/conversation.repository";
 import { PoiService } from "./poi.service";
 import { RagService } from "./rag/rag.service";
@@ -32,7 +35,15 @@ export class TravelService {
     private readonly poiService: PoiService,
     private readonly ragService: RagService,
     private readonly conversations: ConversationRepository,
-  ) { }
+    private readonly auth: AuthService,
+    private readonly config: ConfigService,
+  ) {}
+
+  /** cursor=调 CLI 写回答；fallback=仅用 POI/RAG 模板摘要（不调 cursor，避免 ETIMEDOUT 空等） */
+  private get travelAnswerMode() {
+    const mode = this.config.get<string>("TRAVEL_ANSWER") ?? "cursor";
+    return mode === "fallback" ? "fallback" : "cursor";
+  }
 
   // ── Health / Meta ─────────────────────────────────────────
 
@@ -137,15 +148,15 @@ export class TravelService {
 
   // ── Conversations ─────────────────────────────────────────
 
-  createConversation(cityId?: string, title = "新对话"): ConversationDetail {
+  createConversation(userId: string, cityId?: string, title = "新对话"): ConversationDetail {
     const id = randomUUID();
     const now = new Date().toISOString();
-    this.conversations.insertConversation(id, title, cityId ?? null, now);
-    return this.getConversation(id)!;
+    this.conversations.insertConversation(id, title, cityId ?? null, now, userId);
+    return this.getConversation(id, userId)!;
   }
 
-  listConversations(limit = 30): ConversationSummary[] {
-    return this.conversations.listSummaries(limit).map((row) => ({
+  listConversations(userId: string, limit = 30): ConversationSummary[] {
+    return this.conversations.listSummaries(limit, userId).map((row) => ({
       id: row.id,
       title: row.title,
       cityId: row.city_id,
@@ -155,8 +166,8 @@ export class TravelService {
     }));
   }
 
-  getConversation(id: string): ConversationDetail | null {
-    const row = this.conversations.findById(id);
+  getConversation(id: string, userId: string): ConversationDetail | null {
+    const row = this.conversations.findById(id, userId);
     if (!row) return null;
 
     const messages = this.conversations.findMessages(id);
@@ -174,11 +185,12 @@ export class TravelService {
     };
   }
 
-  deleteConversation(id: string) {
-    return this.conversations.deleteById(id);
+  deleteConversation(id: string, userId: string) {
+    return this.conversations.deleteById(id, userId);
   }
 
   private appendExchange(
+    userId: string,
     conversationId: string | undefined,
     userContent: string,
     assistantContent: string,
@@ -187,10 +199,10 @@ export class TravelService {
     let id = conversationId;
     const now = new Date().toISOString();
 
-    if (!id || !this.getConversation(id)) {
+    if (!id || !this.getConversation(id, userId)) {
       const title = userContent.trim().slice(0, 40) || "新对话";
       id = randomUUID();
-      this.conversations.insertConversation(id, title, cityId ?? null, now);
+      this.conversations.insertConversation(id, title, cityId ?? null, now, userId);
     } else if (cityId) {
       this.conversations.updateCityAndTimestamp(id, cityId, now);
     }
@@ -211,15 +223,18 @@ export class TravelService {
 
   // ── Chat SSE ──────────────────────────────────────────────
 
-  private buildTravelPrompt(messages: ChatMessage[], context: TravelContext) {
+  private buildTravelPrompt(messages: ChatMessage[], context: TravelContext, memoryMd?: string) {
     const transcript = messages
       .slice(-10)
       .map((m) => `${m.role === "user" ? "用户" : "助手"}：${m.content}`)
       .join("\n\n");
 
+    const memoryBlock = formatMemoryForPrompt(memoryMd ?? "");
+
     return [
       getTravelSystemPrompt(context.cityName),
       "",
+      memoryBlock,
       this.travelTools.formatContextForPrompt(context, { compact: true }),
       "",
       "下面是当前对话。请基于上面的数据回答最后一个用户问题。",
@@ -266,6 +281,7 @@ export class TravelService {
     res: Response,
     cityHint?: string,
     conversationId?: string,
+    userId?: string | null,
   ) {
     const sse = createSseSession(res);
     const lastUser = [...messages].reverse().find((m) => m.role === "user");
@@ -274,17 +290,34 @@ export class TravelService {
     sse.send("start", {});
     sse.send("phase", { stage: "retrieving" });
 
+    if (userId && userContent) {
+      this.auth.updateMemoryFromUserMessage(userId, userContent);
+    }
+    const memoryMd = userId ? this.auth.getMemoryMarkdown(userId) : "";
+
     const finish = (answer: string, context: TravelContext, fallback = false) => {
       let savedConversationId = conversationId;
-      if (userContent && answer) {
-        savedConversationId = this.appendExchange(conversationId, userContent, answer, context.city);
+      try {
+        if (userId && userContent && answer) {
+          savedConversationId = this.appendExchange(
+            userId,
+            conversationId,
+            userContent,
+            answer,
+            context.city,
+          );
+        }
+        sse.finish("done", {
+          answer,
+          context,
+          fallback,
+          conversationId: savedConversationId,
+        });
+      } catch (finishError) {
+        const msg = finishError instanceof Error ? finishError.message : String(finishError);
+        this.logger.error(`travel chat finish failed: ${msg}`);
+        sse.finish("done", { answer, fallback: true, conversationId: savedConversationId });
       }
-      sse.finish("done", {
-        answer,
-        context,
-        fallback,
-        conversationId: savedConversationId,
-      });
     };
 
     const sendContext = (context: TravelContext) => {
@@ -301,46 +334,66 @@ export class TravelService {
       });
     };
 
-    const loopStarted = Date.now();
-    const context = await this.travelTools.runToolLoop(messages, cityHint);
-    this.logger.log(
-      `travel chat context=${JSON.stringify(context)}, loopMs=${Date.now() - loopStarted}ms`,
-    );
-    const loopMs = Date.now() - loopStarted;
-    sendContext(context);
-
-    this.logger.log(
-      `travel chat retrieve=${loopMs}ms city=${context.city} tools=${context.toolCalls.length} pois=${context.pois.length} rag=${context.ragChunks.length}`,
-    );
-
-    sse.send("phase", { stage: "generating" });
-
-    const prompt = this.buildTravelPrompt(messages, context);
-
-    try {
-      const genStarted = Date.now();
-      const answer = await this.cursorAgent.run(prompt, sse.pushDelta);
-      this.logger.log(
-        `travel chat generate=${Date.now() - genStarted}ms answerLen=${answer.length} streamed=${sse.streamedChars()}`,
-      );
-      if (sse.streamedChars() === 0 && answer) {
-        await streamTextAsDeltas(sse.pushDelta, answer);
-      }
-      finish(answer, context);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Unknown error";
-      this.logger.warn(`cursor-agent failed, using fallback: ${message}`);
+    const deliverFallbackAnswer = async (
+      context: TravelContext,
+      reason: string,
+      cursorTimedOut = false,
+    ) => {
+      this.logger.warn(`travel chat using fallback answer: ${reason.slice(0, 200)}`);
       let fallback = this.buildFallbackAnswer(context, userContent);
-      if (/ETIMEDOUT|ECONNRESET|\[unavailable\]/i.test(message)) {
+      if (cursorTimedOut) {
         fallback = [
           fallback,
           "",
           "---",
-          "*Cursor 云端连接超时，以上为基于 POI/RAG 检索的离线摘要。请检查网络或代理，或在 `.env` 中设 `MOCK_AGENT=true` 做本地演示。*",
+          "*Cursor 云端连接超时，以上为基于 POI/RAG 检索的离线摘要。可在 `.env` 设 `TRAVEL_ANSWER=fallback` 跳过 cursor，或修复 cursor-agent 网络/登录。*",
         ].join("\n");
       }
       await streamTextAsDeltas(sse.pushDelta, fallback);
       finish(fallback, context, true);
+    };
+
+    try {
+      const loopStarted = Date.now();
+      const context = await this.travelTools.runToolLoop(messages, cityHint);
+      const loopMs = Date.now() - loopStarted;
+      sendContext(context);
+
+      this.logger.log(
+        `travel chat retrieve=${loopMs}ms city=${context.city} tools=${context.toolCalls.length} pois=${context.pois.length} rag=${context.ragChunks.length}`,
+      );
+
+      sse.send("phase", { stage: "generating" });
+
+      if (this.travelAnswerMode === "fallback") {
+        await deliverFallbackAnswer(context, "TRAVEL_ANSWER=fallback");
+        return;
+      }
+
+      const prompt = this.buildTravelPrompt(messages, context, memoryMd);
+
+      try {
+        const genStarted = Date.now();
+        const answer = await this.cursorAgent.run(prompt, sse.pushDelta);
+        this.logger.log(
+          `travel chat generate=${Date.now() - genStarted}ms answerLen=${answer.length} streamed=${sse.streamedChars()}`,
+        );
+        if (sse.streamedChars() === 0 && answer) {
+          await streamTextAsDeltas(sse.pushDelta, answer);
+        }
+        finish(answer, context);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Unknown error";
+        const timedOut = /ETIMEDOUT|ECONNRESET|\[unavailable\]/i.test(message);
+        await deliverFallbackAnswer(context, message, timedOut);
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown error";
+      this.logger.error(`travel chat failed before/during retrieve: ${message}`);
+      if (!res.headersSent) {
+        throw error;
+      }
+      sse.finish("error", { error: message });
     }
   }
 }

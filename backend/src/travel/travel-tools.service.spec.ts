@@ -1,3 +1,4 @@
+import { executeTravelTool, mergeTravelToolResult } from "./travel-tool.registry";
 import { TravelToolsService } from "./travel-tools.service";
 import type { Poi, TravelContext } from "./travel.types";
 
@@ -76,18 +77,19 @@ describe("TravelToolsService", () => {
     );
   });
 
-  it("executeTool search_rag delegates to RagService", async () => {
+  it("search_rag tool delegates to RagService", async () => {
+    const deps = { poiService, ragService };
     const result = await Promise.resolve(
-      tools.executeTool("search_rag", { city: "chengdu", query: "火锅", limit: 5 }),
+      executeTravelTool(deps as never, "search_rag", { city: "chengdu", query: "火锅", limit: 5 }),
     );
     expect(ragService.retrieveWithMetaAsync).toHaveBeenCalledWith("火锅", "chengdu", 5);
     expect(result).toHaveProperty("chunks");
   });
 
-  it("mergeToolResult accumulates pois and rag chunks", () => {
+  it("mergeTravelToolResult accumulates pois and rag chunks", () => {
     const context = tools.createEmptyContext("chengdu", "成都");
-    tools.mergeToolResult(context, "recommend_food", { city: "chengdu" }, [mockPoi]);
-    tools.mergeToolResult(context, "search_rag", { query: "火锅" }, {
+    mergeTravelToolResult(context, "recommend_food", { city: "chengdu" }, [mockPoi]);
+    mergeTravelToolResult(context, "search_rag", { query: "火锅" }, {
       chunks: [
         {
           chunkId: "c1",

@@ -25,15 +25,21 @@ export class ConversationRepository {
     return this.database.connection;
   }
 
-  insertConversation(id: string, title: string, cityId: string | null, now: string) {
+  insertConversation(
+    id: string,
+    title: string,
+    cityId: string | null,
+    now: string,
+    userId: string | null = null,
+  ) {
     this.db
       .prepare(
         `
-      INSERT INTO conversations (id, title, city_id, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?)
+      INSERT INTO conversations (id, title, city_id, user_id, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?)
     `,
       )
-      .run(id, title, cityId, now, now);
+      .run(id, title, cityId, userId, now, now);
   }
 
   updateCityAndTimestamp(id: string, cityId: string, now: string) {
@@ -46,26 +52,29 @@ export class ConversationRepository {
     this.db.prepare("UPDATE conversations SET updated_at = ? WHERE id = ?").run(now, id);
   }
 
-  listSummaries(limit: number): ConversationSummaryRow[] {
+  listSummaries(limit: number, userId: string): ConversationSummaryRow[] {
     return this.db
       .prepare(
         `
       SELECT c.id, c.title, c.city_id, c.created_at, c.updated_at,
              (SELECT COUNT(*) FROM conversation_messages m WHERE m.conversation_id = c.id) AS message_count
       FROM conversations c
+      WHERE c.user_id = ?
       ORDER BY c.updated_at DESC
       LIMIT ?
     `,
       )
-      .all(limit) as ConversationSummaryRow[];
+      .all(userId, limit) as ConversationSummaryRow[];
   }
 
-  findById(id: string): ConversationRow | null {
+  findById(id: string, userId?: string | null): ConversationRow | null {
     const row = this.db
       .prepare(
-        "SELECT id, title, city_id, created_at, updated_at FROM conversations WHERE id = ?",
+        userId
+          ? "SELECT id, title, city_id, created_at, updated_at FROM conversations WHERE id = ? AND user_id = ?"
+          : "SELECT id, title, city_id, created_at, updated_at FROM conversations WHERE id = ?",
       )
-      .get(id) as ConversationRow | undefined;
+      .get(...(userId ? [id, userId] : [id])) as ConversationRow | undefined;
     return row ?? null;
   }
 
@@ -81,8 +90,8 @@ export class ConversationRepository {
       .all(conversationId) as ConversationMessageRow[];
   }
 
-  deleteById(id: string): boolean {
-    const result = this.db.prepare("DELETE FROM conversations WHERE id = ?").run(id);
+  deleteById(id: string, userId: string): boolean {
+    const result = this.db.prepare("DELETE FROM conversations WHERE id = ? AND user_id = ?").run(id, userId);
     return result.changes > 0;
   }
 

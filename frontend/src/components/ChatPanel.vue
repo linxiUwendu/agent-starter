@@ -43,7 +43,7 @@ const statusTagType = computed(() => {
     <header class="panel-header chat-header">
       <div class="chat-header-top">
         <div>
-          <h1 class="panel-title">AI 旅游助手</h1>
+          <h2 class="panel-title panel-title-sm">对话</h2>
           <p class="panel-subtitle">说出目的地，自动规划美食 · 景点 · 行程</p>
         </div>
         <el-tag
@@ -101,5 +101,10 @@ const statusTagType = computed(() => {
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
+}
+
+.panel-title-sm {
+  font-size: 1rem;
+  margin: 0;
 }
 </style>
