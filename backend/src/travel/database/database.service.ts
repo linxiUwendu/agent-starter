@@ -27,7 +27,7 @@ export class DatabaseService implements OnModuleInit {
     if (!fs.existsSync(this.dbPath)) {
       throw new Error(
         `Travel database not found at ${this.dbPath}. ` +
-          `Run "npm run db:init" from the repo root to generate data/travel.db.`,
+          `Run "pnpm db:init" from the repo root to generate data/travel.db.`,
       );
     }
 
@@ -40,7 +40,7 @@ export class DatabaseService implements OnModuleInit {
     if (stats.cities === 0) {
       throw new Error(
         `Travel database at ${this.dbPath} has no cities. ` +
-          `Run "npm run db:init" to rebuild from scripts/seed-data/.`,
+          `Run "pnpm db:init" to rebuild from scripts/seed-data/.`,
       );
     }
 

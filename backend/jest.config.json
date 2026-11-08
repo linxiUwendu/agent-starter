@@ -8,8 +8,9 @@
   "collectCoverageFrom": ["**/*.(t|j)s"],
   "coverageDirectory": "../coverage",
   "testEnvironment": "node",
-  "transformIgnorePatterns": ["/node_modules/(?!jose/)"],
+  "transformIgnorePatterns": ["node_modules/(?!.*jose)"],
   "moduleNameMapper": {
-    "^@/(.*)$": "<rootDir>/$1"
+    "^@/(.*)$": "<rootDir>/$1",
+    "^@agent-starter/shared$": "<rootDir>/../../packages/shared/src/index.ts"
   }
 }

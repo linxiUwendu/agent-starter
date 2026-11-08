@@ -1,6 +1,7 @@
 import { ValidationPipe } from "@nestjs/common";
 import { NestFactory } from "@nestjs/core";
 import { ConfigService } from "@nestjs/config";
+import { DocumentBuilder, SwaggerModule } from "@nestjs/swagger";
 import cookieParser from "cookie-parser";
 import type { NextFunction, Request, Response } from "express";
 import fs from "node:fs";
@@ -26,6 +27,15 @@ async function bootstrap() {
       transform: true,
     }),
   );
+
+  const swaggerConfig = new DocumentBuilder()
+    .setTitle("AI Travel Assistant API")
+    .setDescription("旅游 Tool Loop + RAG + SSE；共享类型见 `@agent-starter/shared`")
+    .setVersion("1.0")
+    .addCookieAuth("auth_token")
+    .build();
+  const document = SwaggerModule.createDocument(app, swaggerConfig);
+  SwaggerModule.setup("api/docs", app, document);
 
   const config = app.get(ConfigService);
   const port = Number(config.get<string>("PORT") ?? 3000);

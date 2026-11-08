@@ -8,6 +8,11 @@ export default defineConfig(({ mode }) => {
 
   return {
     plugins: [vue()],
+    resolve: {
+      alias: {
+        "@agent-starter/shared": path.resolve(__dirname, "../packages/shared/src/index.ts"),
+      },
+    },
     server: {
       port: 5173,
       proxy: {

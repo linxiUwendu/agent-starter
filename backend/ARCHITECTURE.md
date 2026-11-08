@@ -184,6 +184,6 @@ erDiagram
 
 ## 扩展建议
 
-1. **新增城市/POI**：编辑 `scripts/seed-data/seed-data.cities.ts` → `npm run db:init` → 提交 `data/travel.db`
+1. **新增城市/POI**：编辑 `scripts/seed-data/seed-data.cities.ts` → `pnpm db:init` → 提交 `data/travel.db`
 2. **新增工具**：在 `travel.constants.ts` 注册定义，`TravelToolsService.executeTool` 增加分支，`planToolCalls` 补充触发规则
 3. **换 LLM**：替换 `CursorAgentService.run` 的实现，SSE 层（`createSseSession`）无需改动

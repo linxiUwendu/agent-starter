@@ -6,7 +6,7 @@
  */
 /** 供 login-shell  spawn 安全拼接 prompt 等参数 */
 export function shellSingleQuote(value: string): string {
-  return `'${value.replace(/'/g, `'\"'\"'`)}'`;
+  return `'${value.replace(/'/g, "'\\''")}'`;
 }
 
 export function buildCursorAgentShellCommand(command: string, args: string[]): string {

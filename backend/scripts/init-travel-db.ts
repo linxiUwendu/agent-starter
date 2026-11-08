@@ -1,7 +1,7 @@
 /**
  * 从种子数据生成 data/travel.db（开发/CI 维护工具，运行时不会调用）。
  *
- * 用法：npm run db:init -w backend
+ * 用法：pnpm db:init（根目录）或 pnpm --filter backend db:init
  */
 import Database from "better-sqlite3";
 import fs from "node:fs";

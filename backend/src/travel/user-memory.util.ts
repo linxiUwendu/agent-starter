@@ -50,24 +50,6 @@ export function parseMemoryMarkdown(md: string): MemorySections {
   return sections;
 }
 
-function renderMemoryMarkdown(sections: MemorySections): string {
-  const lines = ["# 用户旅行记忆", ""];
-  for (const key of Object.keys(SECTION_HEADERS) as (keyof MemorySections)[]) {
-    const items = sections[key];
-    if (!items.length) continue;
-    lines.push(SECTION_HEADERS[key], ...items.map((i) => `- ${i}`), "");
-  }
-  return lines.join("\n").trimEnd();
-}
-
-function uniquePush(list: string[], item: string) {
-  const norm = item.trim();
-  if (!norm) return;
-  if (list.some((x) => x === norm)) return;
-  list.push(norm);
-  while (list.length > MAX_SECTION_ITEMS) list.shift();
-}
-
 /** 规则从用户话术中抽取可写入记忆的条目（不调用 LLM） */
 export function extractMemoryFactsFromText(text: string): Partial<MemorySections> {
   const t = text.trim();
@@ -118,28 +100,35 @@ export function extractMemoryFactsFromText(text: string): Partial<MemorySections
   return out;
 }
 
-export function mergeMemorySections(existing: MemorySections, patch: Partial<MemorySections>): MemorySections {
-  const merged = { ...existing, dietary: [...existing.dietary], constraints: [...existing.constraints], budget: [...existing.budget], defaultCity: [...existing.defaultCity], notes: [...existing.notes] };
-  for (const key of Object.keys(patch) as (keyof MemorySections)[]) {
-    for (const item of patch[key] ?? []) {
-      uniquePush(merged[key], item);
-    }
-  }
-  return merged;
-}
-
 /** 将规则抽取结果合并进现有 Markdown 记忆 */
 export function applyMemoryPatch(existingMd: string, userText: string): string {
   const patch = extractMemoryFactsFromText(userText);
   if (!Object.values(patch).some((v) => v?.length)) {
     return existingMd.trim();
   }
-  const sections = mergeMemorySections(parseMemoryMarkdown(existingMd), patch);
-  return renderMemoryMarkdown(sections);
-}
 
-export function formatMemoryForPrompt(md: string): string {
-  const trimmed = md.trim();
-  if (!trimmed) return "";
-  return ["## 用户长期记忆（Markdown）", trimmed, ""].join("\n");
+  const sections = parseMemoryMarkdown(existingMd);
+  for (const key of Object.keys(patch) as (keyof MemorySections)[]) {
+    const additions = patch[key];
+    if (!additions?.length) continue;
+    const list = sections[key];
+    const seen = new Set(list);
+    for (const item of additions) {
+      const norm = item.trim();
+      if (!norm || seen.has(norm)) continue;
+      seen.add(norm);
+      list.push(norm);
+      while (list.length > MAX_SECTION_ITEMS) {
+        seen.delete(list.shift()!);
+      }
+    }
+  }
+
+  const lines = ["# 用户旅行记忆", ""];
+  for (const key of Object.keys(SECTION_HEADERS) as (keyof MemorySections)[]) {
+    const items = sections[key];
+    if (!items.length) continue;
+    lines.push(SECTION_HEADERS[key], ...items.map((i) => `- ${i}`), "");
+  }
+  return lines.join("\n").trimEnd();
 }

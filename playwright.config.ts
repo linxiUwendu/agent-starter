@@ -9,7 +9,8 @@ export default defineConfig({
     trace: "on-first-retry",
   },
   webServer: {
-    command: "npm run build && MOCK_AGENT=true PORT=3000 HOST=127.0.0.1 npm start",
+    command:
+      "pnpm run build && MOCK_AGENT=true AUTH_ALLOW_DEV_LOGIN=true PORT=3000 HOST=127.0.0.1 pnpm start",
     url: "http://127.0.0.1:3000/api/travel/health",
     reuseExistingServer: !process.env.CI,
     timeout: 180_000,

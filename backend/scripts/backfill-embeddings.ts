@@ -1,6 +1,6 @@
 /**
  * 为 kb_chunks 回填 OpenAI embedding（需 OPENAI_API_KEY + RAG_EMBEDDING_PROVIDER=openai）
- * 用法：npm run rag:embed
+ * 用法：pnpm --filter backend rag:embed
  */
 import Database from "better-sqlite3";
 import fs from "node:fs";

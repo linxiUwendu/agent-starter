@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "nest start --watch",
     "build": "nest build",
+    "lint": "eslint \"src/**/*.ts\" --max-warnings 0",
     "start": "nest start",
     "start:prod": "node dist/main",
     "test": "jest --config jest.config.json",
@@ -13,11 +14,13 @@
     "rag:embed": "npx ts-node --transpile-only scripts/backfill-embeddings.ts"
   },
   "dependencies": {
+    "@agent-starter/shared": "workspace:*",
     "@nestjs/common": "^11.1.3",
     "@nestjs/config": "^4.0.2",
     "@nestjs/core": "^11.1.3",
     "@nestjs/platform-express": "^11.1.3",
     "@nestjs/serve-static": "^5.0.3",
+    "@nestjs/swagger": "^11.1.0",
     "better-sqlite3": "^11.10.0",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.2",
@@ -26,11 +29,13 @@
     "jsonwebtoken": "^9.0.3",
     "pdf-parse": "^1.1.1",
     "reflect-metadata": "^0.2.2",
-    "rxjs": "^7.8.2"
+    "rxjs": "^7.8.2",
+    "supertest": "^7.0.0"
   },
   "devDependencies": {
     "@nestjs/cli": "^11.0.7",
     "@nestjs/schematics": "^11.0.5",
+    "@nestjs/testing": "^11.1.3",
     "@types/better-sqlite3": "^7.6.13",
     "@types/cookie-parser": "^1.4.10",
     "@types/express": "^5.0.3",
@@ -39,6 +44,7 @@
     "@types/multer": "^2.0.0",
     "@types/node": "^24.0.13",
     "@types/pdf-parse": "^1.1.5",
+    "@types/supertest": "^6.0.3",
     "jest": "^30.0.5",
     "ts-jest": "^29.4.1",
     "ts-node": "^10.9.2",

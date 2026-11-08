@@ -6,11 +6,7 @@ import { CursorAgentService } from "../chat/cursor-agent.service";
 import { RagService } from "./rag/rag.service";
 import { PoiService } from "./poi.service";
 import type { ToolLoopStep, TravelContext } from "./travel.types";
-import {
-  TRAVEL_TOOLS,
-  resolveCityFromConversation,
-  type TravelToolName,
-} from "./travel.constants";
+import { TRAVEL_TOOLS, resolveCityFromConversation } from "./travel.constants";
 import {
   executeTravelTool,
   mergeTravelToolResult,

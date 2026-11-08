@@ -6,9 +6,11 @@
   "scripts": {
     "dev": "vite",
     "build": "vue-tsc --noEmit && vite build",
+    "lint": "eslint \"src/**/*.ts\" --max-warnings 0",
     "preview": "vite preview"
   },
   "dependencies": {
+    "@agent-starter/shared": "workspace:*",
     "@element-plus/icons-vue": "^2.3.2",
     "element-plus": "^2.14.7",
     "leaflet": "^1.9.4",

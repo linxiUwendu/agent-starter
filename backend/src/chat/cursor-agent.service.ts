@@ -272,13 +272,15 @@ export class CursorAgentService {
         prompt,
       ];
 
-      let timeoutId: ReturnType<typeof setTimeout>;
-      let stallTimer: ReturnType<typeof setInterval>;
+      const timers: {
+        timeout: ReturnType<typeof setTimeout> | undefined;
+        stall: ReturnType<typeof setInterval> | undefined;
+      } = { timeout: undefined, stall: undefined };
 
       const cleanup = () => {
         settled = true;
-        clearTimeout(timeoutId);
-        clearInterval(stallTimer);
+        if (timers.timeout !== undefined) clearTimeout(timers.timeout);
+        if (timers.stall !== undefined) clearInterval(timers.stall);
         child?.kill("SIGTERM");
       };
 
@@ -299,8 +301,8 @@ export class CursorAgentService {
       const succeed = (answer: string) => {
         if (settled) return;
         settled = true;
-        clearTimeout(timeoutId);
-        clearInterval(stallTimer);
+        if (timers.timeout !== undefined) clearTimeout(timers.timeout);
+        if (timers.stall !== undefined) clearInterval(timers.stall);
         flushDeltas();
         this.logger.log(`done ${Date.now() - startedAt}ms answerLen=${answer.length}`);
         resolve(answer);
@@ -350,11 +352,11 @@ export class CursorAgentService {
         return;
       }
 
-      timeoutId = setTimeout(() => {
+      timers.timeout = setTimeout(() => {
         fail(new Error(`cursor-agent timed out after ${Math.round(this.timeoutMs / 1000)} seconds.`));
       }, this.timeoutMs);
 
-      stallTimer = setInterval(() => {
+      timers.stall = setInterval(() => {
         if (Date.now() - lastActivityAt > this.stallMs) {
           fail(
             new Error(

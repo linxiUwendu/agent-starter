@@ -222,7 +222,7 @@ export function extractSearchTerms(message: string): string[] {
     if (message.includes(kw)) terms.add(kw);
   }
 
-  for (const seg of message.split(/[\s，。！？、；：""''（）\-\—]+/)) {
+  for (const seg of message.split(/[\s，。！？、；：""''（）\-—]+/)) {
     const trimmed = seg.trim();
     if (trimmed.length >= 2 && trimmed.length <= 10) terms.add(trimmed);
   }

@@ -61,8 +61,8 @@ OPENAI_EMBEDDING_MODEL=text-embedding-3-small
 回填 chunk embedding（需先 build）：
 
 ```bash
-npm run build -w backend
-npm run rag:embed
+pnpm --filter backend build
+pnpm --filter backend rag:embed
 ```
 
 调试 OpenAI 检索：

@@ -11,7 +11,7 @@
 **运行时不会自动灌库。** 需要变更种子数据时：
 
 1. 编辑 `backend/scripts/seed-data/` 下的 TS 文件
-2. 执行 `npm run db:init` 重新生成 `travel.db`
+2. 执行 `pnpm db:init` 重新生成 `travel.db`
 3. 提交更新后的 `travel.db`
 
 运行时仍可通过 API 增删知识库文档、持久化对话（写入同一 DB 文件）。

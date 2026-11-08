@@ -7,7 +7,6 @@ import { AuthService } from "../auth/auth.service";
 import { ChatMessage } from "../agent/agent.constants";
 import { createSseSession, streamTextAsDeltas } from "../common/sse.util";
 import { CursorAgentService } from "../chat/cursor-agent.service";
-import { formatMemoryForPrompt } from "./user-memory.util";
 import { ConversationRepository } from "./database/repositories/conversation.repository";
 import { PoiService } from "./poi.service";
 import { RagService } from "./rag/rag.service";
@@ -229,7 +228,10 @@ export class TravelService {
       .map((m) => `${m.role === "user" ? "用户" : "助手"}：${m.content}`)
       .join("\n\n");
 
-    const memoryBlock = formatMemoryForPrompt(memoryMd ?? "");
+    const memoryTrimmed = (memoryMd ?? "").trim();
+    const memoryBlock = memoryTrimmed
+      ? ["## 用户长期记忆（Markdown）", memoryTrimmed, ""].join("\n")
+      : "";
 
     return [
       getTravelSystemPrompt(context.cityName),

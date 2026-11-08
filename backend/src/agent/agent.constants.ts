@@ -1,9 +1,4 @@
-export type ChatRole = "user" | "assistant";
-
-export interface ChatMessage {
-  role: ChatRole;
-  content: string;
-}
+export type { ChatMessage, ChatRole } from "@agent-starter/shared";
 
 export const AGENT_NAME = "cursor-agent";
 

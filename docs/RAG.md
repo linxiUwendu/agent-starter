@@ -43,7 +43,7 @@ sequenceDiagram
 | `kb_chunks` | 文档分块（约 380 字/块，段落优先） |
 | `kb_chunks_fts` | FTS5 虚拟表，辅助英文/分词检索 |
 
-种子数据维护在 `backend/scripts/seed-data/`（POI + KB 文本）。**运行时**直接读取仓库中的 `data/travel.db`；需要更新基础数据时执行 `npm run db:init` 重新生成并提交。
+种子数据维护在 `backend/scripts/seed-data/`（POI + KB 文本）。**运行时**直接读取仓库中的 `data/travel.db`；需要更新基础数据时执行 `pnpm db:init` 重新生成并提交。
 
 ---
 
@@ -78,7 +78,7 @@ sequenceDiagram
 
 OpenAI embedding 路径在 SQL 层按 city 过滤并 `LIMIT 300`，避免全国向量扫描。
 
-可选 **OpenAI embedding**：设置 `RAG_EMBEDDING_PROVIDER=openai`，运行 `npm run rag:embed -w backend` 回填向量；检索效果通过 `POST /api/travel/chat` 的 SSE `context.ragChunks` 观察。
+可选 **OpenAI embedding**：设置 `RAG_EMBEDDING_PROVIDER=openai`，运行 `pnpm --filter backend rag:embed` 回填向量；检索效果通过 `POST /api/travel/chat` 的 SSE `context.ragChunks` 观察。
 
 **为什么 LIKE + 向量？** LIKE 精确命中关键词；TF-IDF 向量补充语义相近片段（如「微辣」↔「火锅起步」），RRF 融合比单路更稳。
 
@@ -144,7 +144,7 @@ LLM 被指示「基于上面的数据回答」，从而减少幻觉、增加可�
 
 ## 8. 扩展 RAG
 
-1. **新增文档**：编辑 `backend/scripts/seed-data/seed-data.kb.ts` → `npm run db:init`；或使用 POST 入库 API
+1. **新增文档**：编辑 `backend/scripts/seed-data/seed-data.kb.ts` → `pnpm db:init`；或使用 POST 入库 API
 2. **向量检索**：在 `retrieve()` 中增加 embedding 相似度，与 LIKE 做混合排序
 3. **引用 UI**：前端在 AI 回复旁展示 `documentTitle` 链接
 4. **覆盖补全**：为扬州、洛阳等 POI 已有但 KB 缺失的城市补 seed

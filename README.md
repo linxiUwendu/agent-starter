@@ -10,31 +10,48 @@
 | **SSE 流式** | 自研 `createSseSession`：心跳保活、delta 增量、TCP_NODELAY 防缓冲 |
 | **RAG 实践** | SQLite 分块 + LIKE + **按城市分区 TF-IDF 向量**混合检索（RRF 融合），支持多城市 lazy 索引 |
 | **可演示** | `MOCK_AGENT=true` + Docker Compose 一键启动 |
-| **工程化** | Jest 单测 + Playwright E2E + GitHub Actions CI + Render 部署 |
+| **工程化** | **pnpm workspace** + **Turborepo** + `packages/shared` 类型包、ESLint、Jest（含 Supertest 集成测）、Playwright E2E、GitHub Actions、Docker / Render、Swagger `/api/docs` |
+| **账号与记忆** | Google GIS + HttpOnly JWT Cookie；用户 Markdown 旅行记忆（规则抽取）；会话按 `user_id` 隔离 |
 
-更详细的 RAG 说明见 [docs/RAG.md](docs/RAG.md)，部署见 [docs/DEPLOY.md](docs/DEPLOY.md)。
+更详细的 RAG 见 [docs/RAG.md](docs/RAG.md)，部署见 [docs/DEPLOY.md](docs/DEPLOY.md)，**面试口述与简历对齐**见 [docs/INTERVIEW.md](docs/INTERVIEW.md)。
+
+## 账号、游客与旅行记忆
+
+| 能力 | 登录用户 | 游客（「游客进入」） |
+|------|----------|----------------------|
+| SSE 聊天 | ✅ | ✅ |
+| 会话列表 / 创建 / 删除 | ✅ | ❌（API 需 JWT） |
+| 旅行记忆读写 | ✅ `user_memory.content_md` | ❌ |
+| 鉴权 | Cookie `auth_token` | 无 Cookie，仅 `sessionStorage.travel_guest` 进 `/app` |
+
+- **登录**：Google One Tap / 按钮 → `POST /api/auth/google`；本地可用 `POST /api/auth/dev-login`（见 `.env.example`）。
+- **记忆**：每条用户消息在 `streamTravelChat` 开头触发规则抽取合并 Markdown，再注入 prompt；**不落磁盘 `.md 文件`**，存 SQLite。
+- **前端**：全局顶栏 `AppTopBar` 展示账号 / 登录；路由 `ensureAuthLoaded` + 游客标记。
+
+环境变量：`GOOGLE_CLIENT_ID`、`JWT_SECRET`、`AUTH_ALLOW_DEV_LOGIN`、`AUTH_GOOGLE_INSECURE_LOCAL_JWT`（仅开发）。
 
 ## 快速开始
 
 ```bash
-yarn install
+corepack enable   # Node 自带，激活 package.json 中的 pnpm 版本
+pnpm install
 cp .env.example .env   # 默认 MOCK_AGENT=true，开箱可跑
-# data/travel.db 已预置；缺失时运行 npm run db:init
+# data/travel.db 已预置；缺失时运行 pnpm db:init
 
-yarn dev       # 后端 :3300，前端 :5173
-yarn test      # 单元测试
-yarn test:e2e  # Playwright E2E
-yarn build
-yarn start
+pnpm dev        # 后端 :3300，前端 :5173
+pnpm test       # turbo run test
+pnpm test:e2e   # Playwright E2E
+pnpm build
+pnpm start
 
 # Docker 一键启动（Mock 模式，适合 demo / 部署）
-yarn docker:up
+pnpm docker:up
 ```
 
 ### Docker / 在线 Demo
 
 ```bash
-docker compose up --build   # 或 yarn docker:up
+docker compose up --build   # 或 pnpm docker:up
 # 访问 http://localhost:3000
 ```
 
@@ -58,12 +75,29 @@ cursor-agent login
 
 ```
 agent-starter/
-├── backend/          # NestJS API、SSE 流、SQLite、RAG、Agent 集成
-├── frontend/         # Vue 3 三栏 UI（聊天 | 地图 | 行程/美食/知识库）
-├── data/travel.db    # 预置 SQLite（POI + 知识库，运行时只读打开）
-├── docs/RAG.md       # RAG 详细说明
-└── .env              # MOCK_AGENT、端口、认证等
+├── packages/shared/  # @agent-starter/shared — 前后端共享 TS 类型
+├── backend/          # NestJS API、SSE、SQLite、RAG、Swagger /api/docs
+├── frontend/         # Vue 3 三栏 UI（Vite alias → shared 源码）
+├── turbo.json        # Turborepo（build 含 ^shared）
+├── eslint.config.mjs # 根 ESLint（TS）
+├── data/travel.db    # 预置 SQLite
+├── docs/MONOREPO.md  # 共享包、缓存、迁 PG、Remote Cache
+└── .env
 ```
+
+### Monorepo（pnpm workspace + Turborepo）
+
+| 命令 | 说明 |
+|------|------|
+| `pnpm build` | `turbo run build` — **先 `@agent-starter/shared` → frontend / backend** |
+| `pnpm lint` | `turbo run lint` |
+| `pnpm test` | `turbo run test`（含 Supertest 集成测） |
+| `pnpm dev` | concurrently；工作区包用 `pnpm --filter backend` |
+| `pnpm exec turbo run lint test build --summarize` | **CI**（`--frozen-lockfile` 安装） |
+
+仓库内：`pnpm-workspace.yaml`、`.npmrc`（`shamefully-hoist` 便于 Nest/native 模块）。
+
+**面试可讲**：`packages/shared` 单一类型源；`^build` 拓扑；OpenAPI 见 **http://127.0.0.1:3000/api/docs**；Remote Cache 见 [docs/MONOREPO.md](docs/MONOREPO.md)。
 
 ## 数据库结构（SQLite）
 
@@ -218,7 +252,7 @@ erDiagram
 
 ### 数据形成方式
 
-| 表 | 初始数据（`npm run db:init`） | 运行时写入 |
+| 表 | 初始数据（`pnpm db:init`） | 运行时写入 |
 |----|-------------------------------|------------|
 | `cities` | seed-data.cities.ts | — |
 | `pois` | seed（景点 + 美食 + 机位合一） | — |
@@ -227,7 +261,7 @@ erDiagram
 | `kb_chunks` / `kb_chunks_fts` | 文档写入时自动切分 | 随文档 API 同步 |
 | `conversations` / `conversation_messages` | — | 聊天完成后 `appendExchange` |
 
-维护流程：编辑 `backend/scripts/seed-data/` → `npm run db:init` → 提交新的 `data/travel.db`。
+维护流程：编辑 `backend/scripts/seed-data/` → `pnpm db:init` → 提交新的 `data/travel.db`。
 
 ### 与 `TravelContext` 的映射
 
@@ -575,7 +609,7 @@ OpenAI embedding 调试路径（`?provider=openai`）在 SQL 层按 city 过滤�
 |------|------|
 | **仓库** | `data/travel.db` 已包含 11 城 POI + 知识库，提交到 Git |
 | **启动** | `DatabaseService` 只打开 DB，**不建表、不灌数据** |
-| **维护** | 改 `backend/scripts/seed-data/` → `npm run db:init` → 提交新 db |
+| **维护** | 改 `backend/scripts/seed-data/` → `pnpm db:init` → 提交新 db |
 | **文档 API** | `POST /api/travel/rag/documents` → 分块 + 增量 rebuild 向量分区 |
 | **删除** | `DELETE .../documents/:id` → 删除 chunk + FTS → 增量 rebuild 分区 |
 
@@ -660,8 +694,8 @@ SSE `context` 中的 `ragMeta` 便于调试与面试演示：
 ## 测试
 
 ```bash
-yarn test       # Jest 单元测试
-yarn test:e2e   # Playwright E2E（自动 build + 启动 Mock 服务）
+pnpm test       # turbo → Jest 单元测试（含 backend 集成）
+pnpm test:e2e   # Playwright E2E（自动 build + 启动 Mock 服务）
 ```
 
 CI：`.github/workflows/ci.yml`（unit test + build + E2E）。
@@ -677,7 +711,7 @@ CI：`.github/workflows/ci.yml`（unit test + build + E2E）。
 
 ## 扩展指南
 
-1. **新增城市/POI**：编辑 `backend/scripts/seed-data/seed-data.cities.ts` → `npm run db:init` → 提交 `data/travel.db`
+1. **新增城市/POI**：编辑 `backend/scripts/seed-data/seed-data.cities.ts` → `pnpm db:init` → 提交 `data/travel.db`
 2. **新增 RAG 文档**：编辑 `backend/scripts/seed-data/seed-data.kb.ts` 后同上；或通过 `POST /api/travel/rag/documents` 运行时写入
 3. **换 LLM**：替换 `CursorAgentService.run`，SSE 层无需改动
 

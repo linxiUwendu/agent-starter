@@ -33,7 +33,7 @@ describe("cursor-agent.util", () => {
   describe("shellSingleQuote", () => {
     it("quotes strings with spaces and apostrophes", () => {
       expect(shellSingleQuote("回复 ok")).toBe("'回复 ok'");
-      expect(buildCursorAgentShellCommand("cursor-agent", ["-p", "a'b"])).toContain("'a'\"'\"'b'");
+      expect(buildCursorAgentShellCommand("cursor-agent", ["-p", "a'b"])).toContain("'a'\\''b'");
     });
   });
 

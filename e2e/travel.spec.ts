@@ -1,4 +1,12 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type APIRequestContext } from "@playwright/test";
+
+/** E2E 会话 API 需 JWT；与生产共用 Cookie 鉴权（dev-login 仅在 AUTH_ALLOW_DEV_LOGIN 时可用） */
+async function devLogin(request: APIRequestContext, email = "e2e@interview.local") {
+  const res = await request.post("/api/auth/dev-login", {
+    data: { email, displayName: "E2E User" },
+  });
+  expect(res.ok(), await res.text()).toBeTruthy();
+}
 
 test.describe("AI Travel Assistant", () => {
   test("chat flow updates map markers and rag hits", async ({ page }) => {
@@ -24,6 +32,8 @@ test.describe("AI Travel Assistant", () => {
   test("creates and lists conversation", async ({ page, request }) => {
     const health = await request.get("/api/travel/health");
     expect(health.ok()).toBeTruthy();
+
+    await devLogin(request);
 
     const created = await request.post("/api/travel/conversations", {
       data: { city: "chengdu", title: "E2E 测试" },
