@@ -43,7 +43,7 @@ sequenceDiagram
 | `kb_chunks` | 文档分块（约 380 字/块，段落优先） |
 | `kb_chunks_fts` | FTS5 虚拟表，辅助英文/分词检索 |
 
-种子数据维护在 `backend/scripts/seed-data/`（POI + KB 文本）。**运行时**直接读取仓库中的 `data/travel.db`；需要更新基础数据时执行 `pnpm db:init` 重新生成并提交。
+种子数据维护在 `apps/backend/scripts/seed-data/`（POI + KB 文本）。**运行时**直接读取仓库中的 `packages/data/travel.db`；需要更新基础数据时执行 `pnpm db:init` 重新生成并提交。
 
 ---
 
@@ -144,7 +144,7 @@ LLM 被指示「基于上面的数据回答」，从而减少幻觉、增加可�
 
 ## 8. 扩展 RAG
 
-1. **新增文档**：编辑 `backend/scripts/seed-data/seed-data.kb.ts` → `pnpm db:init`；或使用 POST 入库 API
+1. **新增文档**：编辑 `apps/backend/scripts/seed-data/seed-data.kb.ts` → `pnpm db:init`；或使用 POST 入库 API
 2. **向量检索**：在 `retrieve()` 中增加 embedding 相似度，与 LIKE 做混合排序
 3. **引用 UI**：前端在 AI 回复旁展示 `documentTitle` 链接
 4. **覆盖补全**：为扬州、洛阳等 POI 已有但 KB 缺失的城市补 seed
@@ -158,7 +158,7 @@ LLM 被指示「基于上面的数据回答」，从而减少幻觉、增加可�
 | `travel-tools.service.ts` | `buildContext` 调用 RAG；`formatContextForPrompt` 注入 |
 | `rag/rag.service.ts` | 检索、文档列表、统计 |
 | `rag/rag.util.ts` | 分块、关键词提取、FTS query |
-| `backend/scripts/init-travel-db.ts` | 从 seed-data 生成 travel.db |
-| `backend/scripts/seed-data/seed-data.kb.ts` | KB 种子文档（维护用） |
-| `backend/scripts/seed-data/seed-data.cities.ts` | 城市 POI/行程种子（维护用） |
+| `apps/backend/scripts/init-travel-db.ts` | 从 seed-data 生成 travel.db |
+| `apps/backend/scripts/seed-data/seed-data.kb.ts` | KB 种子文档（维护用） |
+| `apps/backend/scripts/seed-data/seed-data.cities.ts` | 城市 POI/行程种子（维护用） |
 | `database/schema.ts` | `kb_*` 表定义 |

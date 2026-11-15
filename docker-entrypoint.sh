@@ -1,8 +1,8 @@
 #!/bin/sh
 set -e
 
-DB_PATH="${TRAVEL_DB_PATH:-/app/data/travel.db}"
-TEMPLATE="/app/data/travel.db.template"
+DB_PATH="${TRAVEL_DB_PATH:-/app/packages/data/travel.db}"
+TEMPLATE="/app/packages/data/travel.db.template"
 
 mkdir -p "$(dirname "$DB_PATH")"
 
@@ -16,4 +16,4 @@ if [ ! -f "$DB_PATH" ] || [ ! -s "$DB_PATH" ]; then
   fi
 fi
 
-exec node backend/dist/main.js
+exec node apps/backend/dist/main.js

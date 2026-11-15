@@ -13,26 +13,29 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 9
-
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
           cache: "pnpm"
 
+      - name: Enable Corepack (pnpm 版本见 package.json → packageManager)
+        run: corepack enable
+
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json: true
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
       - name: Verify travel.db
-        run: test -f data/travel.db
+        run: test -f packages/data/travel.db
 
       - name: Lint + test + build (Turborepo)
         run: pnpm exec turbo run lint test build --summarize
 
       - name: Install Playwright browsers
-        run: pnpm exec playwright install chromium --with-deps
+        run: pnpm --filter e2e exec playwright install chromium --with-deps
 
       - name: Run E2E tests
         run: pnpm run test:e2e

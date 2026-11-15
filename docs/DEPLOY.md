@@ -22,6 +22,10 @@ open http://localhost:3000
 | `RAG_EMBEDDING_PROVIDER` | tfidf | 本地 TF-IDF 向量；可选 `openai` |
 | `OPENAI_API_KEY` | — | 启用 OpenAI embedding 时必填 |
 | `PORT` | 3000 | 对外端口 |
+| `JWT_SECRET` | — | 启用 Google / 账号登录时**生产必填**（Compose 经根目录 `.env`） |
+| `GOOGLE_CLIENT_ID` | — | 可选；优先于镜像内 `config/google-oauth.team.json`，见 [GOOGLE_AUTH.md](./GOOGLE_AUTH.md) |
+
+Compose 会尝试加载根目录 `.env`（`required: false`）。团队 Client ID 也可直接提交 `config/google-oauth.team.json` 打进镜像。
 
 ## Render 部署（免费 Demo）
 

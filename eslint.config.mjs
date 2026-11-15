@@ -12,7 +12,7 @@ export default tseslint.config(
       "**/node_modules/**",
       ".turbo/**",
       "coverage/**",
-      "frontend/dist/**",
+      "apps/frontend/dist/**",
       "packages/shared/dist/**",
       "*.config.js",
       "*.config.mjs",
@@ -20,7 +20,7 @@ export default tseslint.config(
     ],
   },
   {
-    files: ["backend/src/**/*.ts", "packages/shared/src/**/*.ts"],
+    files: ["apps/backend/src/**/*.ts", "packages/shared/src/**/*.ts"],
     languageOptions: {
       ecmaVersion: 2022,
       sourceType: "module",
@@ -33,7 +33,7 @@ export default tseslint.config(
     },
   },
   {
-    files: ["frontend/src/**/*.ts"],
+    files: ["apps/frontend/src/**/*.ts"],
     languageOptions: {
       ecmaVersion: 2022,
       sourceType: "module",

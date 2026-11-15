@@ -3,25 +3,29 @@
   "version": "1.0.0",
   "private": true,
   "description": "Cursor agent chat app with NestJS + Vue 3",
+  "engines": {
+    "node": ">=22",
+    "pnpm": "10.34.9"
+  },
   "scripts": {
     "dev": "concurrently -n backend,frontend -c blue,green \"pnpm --filter backend dev\" \"node scripts/wait-for-backend.mjs && pnpm --filter frontend dev\"",
     "build": "turbo run build",
     "lint": "turbo run lint",
     "start": "pnpm --filter backend start:prod",
     "test": "turbo run test",
-    "test:e2e": "playwright test",
+    "test:e2e": "pnpm --filter e2e test:e2e",
     "db:init": "pnpm --filter backend db:init",
     "docker:up": "docker compose up --build",
-    "docker:down": "docker compose down"
+    "docker:down": "docker compose down",
+    "postinstall": "node scripts/ensure-better-sqlite3.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^9.19.0",
-    "@playwright/test": "^1.55.0",
     "concurrently": "^9.2.1",
     "eslint": "^9.19.0",
     "globals": "^15.14.0",
     "typescript-eslint": "^8.21.0",
     "turbo": "^2.5.4"
   },
-  "packageManager": "pnpm@9.15.9"
+  "packageManager": "pnpm@10.34.9"
 }

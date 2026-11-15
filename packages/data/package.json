@@ -1,0 +1,6 @@
+{
+  "name": "@agent-starter/data",
+  "version": "1.0.0",
+  "private": true,
+  "description": "预置 SQLite travel.db 与数据维护说明（种子脚本仍在 apps/backend/scripts）"
+}

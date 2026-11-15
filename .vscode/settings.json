@@ -7,8 +7,8 @@
   "vetur.validation.style": false,
   "vetur.validation.interpolation": false,
   "vue.inlayHints.missingProps": false,
-  "vue.server.configFilePath": "frontend/tsconfig.json",
-  "vue.server.include": ["frontend/src/**/*"],
+  "vue.server.configFilePath": "apps/frontend/tsconfig.json",
+  "vue.server.include": ["apps/frontend/src/**/*"],
   "files.associations": {
     "*.vue": "vue"
   },

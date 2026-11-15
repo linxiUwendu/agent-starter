@@ -28,15 +28,19 @@
 - **记忆**：每条用户消息在 `streamTravelChat` 开头触发规则抽取合并 Markdown，再注入 prompt；**不落磁盘 `.md 文件`**，存 SQLite。
 - **前端**：全局顶栏 `AppTopBar` 展示账号 / 登录；路由 `ensureAuthLoaded` + 游客标记。
 
-环境变量：`GOOGLE_CLIENT_ID`、`JWT_SECRET`、`AUTH_ALLOW_DEV_LOGIN`、`AUTH_GOOGLE_INSECURE_LOCAL_JWT`（仅开发）。
+**团队 Google 登录**：全组共用一个 Web Client ID → 写入 `config/google-oauth.team.json`（可提交 Git）；前端只读 `GET /api/auth/config`。流程见 [docs/GOOGLE_AUTH.md](docs/GOOGLE_AUTH.md)。私密项：`JWT_SECRET`、`AUTH_ALLOW_DEV_LOGIN`、`AUTH_GOOGLE_INSECURE_LOCAL_JWT`（仅开发）。
 
 ## 快速开始
 
 ```bash
-corepack enable   # Node 自带，激活 package.json 中的 pnpm 版本
-pnpm install
+corepack enable   # Node 自带包管理器切换器
+corepack install  # 按根 package.json 的 "packageManager" 安装/钉扎 pnpm（当前 pnpm@10.34.9）
+nvm use           # .nvmrc → Node 22；安装与 pnpm dev 请用同一主版本
+pnpm -v           # 应与 packageManager 一致
+pnpm install      # postinstall 会为当前 Node 编译 better-sqlite3
+# 仍报 ERR_DLOPEN_FAILED：nvm use 22 && node scripts/ensure-better-sqlite3.mjs
 cp .env.example .env   # 默认 MOCK_AGENT=true，开箱可跑
-# data/travel.db 已预置；缺失时运行 pnpm db:init
+# packages/data/travel.db 已预置；缺失时运行 pnpm db:init
 
 pnpm dev        # 后端 :3300，前端 :5173
 pnpm test       # turbo run test
@@ -75,12 +79,17 @@ cursor-agent login
 
 ```
 agent-starter/
-├── packages/shared/  # @agent-starter/shared — 前后端共享 TS 类型
-├── backend/          # NestJS API、SSE、SQLite、RAG、Swagger /api/docs
-├── frontend/         # Vue 3 三栏 UI（Vite alias → shared 源码）
+├── apps/
+│   ├── backend/      # NestJS API、SSE、SQLite、RAG、Swagger /api/docs
+│   └── frontend/     # Vue 3 三栏 UI（Vite alias → shared 源码）
+├── packages/
+│   ├── shared/       # @agent-starter/shared — 前后端共享 TS 类型
+│   ├── data/         # 预置 travel.db（@agent-starter/data）
+│   └── e2e/          # Playwright
+├── config/           # google-oauth.team.json（团队公开 Client ID，可提交）
 ├── turbo.json        # Turborepo（build 含 ^shared）
 ├── eslint.config.mjs # 根 ESLint（TS）
-├── data/travel.db    # 预置 SQLite
+├── docs/GOOGLE_AUTH.md
 ├── docs/MONOREPO.md  # 共享包、缓存、迁 PG、Remote Cache
 └── .env
 ```
@@ -101,7 +110,7 @@ agent-starter/
 
 ## 数据库结构（SQLite）
 
-预置库路径：`data/travel.db`。Schema 定义见 [`backend/src/travel/database/schema.ts`](backend/src/travel/database/schema.ts)。
+预置库路径：`packages/data/travel.db`。Schema 定义见 [`apps/backend/src/travel/database/schema.ts`](apps/backend/src/travel/database/schema.ts)。**改表结构后执行 `pnpm db:init` 并提交新 db**；后端启动不会自动迁移旧库。
 
 ### 领域划分
 
@@ -109,21 +118,28 @@ agent-starter/
 |------|-----|------|
 | **POI** | `cities`、`pois`、`itineraries` | 结构化旅游数据（景点、美食、机位、参考行程） |
 | **RAG** | `kb_documents`、`kb_chunks`、`kb_chunks_fts` | 攻略长文、分块检索、FTS5 全文索引 |
-| **对话** | `conversations`、`conversation_messages` | 聊天会话与消息持久化 |
+| **账号** | `users`、`user_memory` | Google / dev 登录用户；旅行记忆 Markdown |
+| **对话** | `conversations`、`conversation_messages` | 按 `user_id` 隔离的会话与消息（`sort_order` 排序） |
 
 ### ER 关系图
 
+实体关系与 `schema.ts` 中外键一致；`kb_chunks_fts` 为 FTS5 **虚拟表**，写入时与 `kb_chunks` 同步（无 SQL 外键）。
+
 ```mermaid
 erDiagram
-  cities ||--o{ pois : "拥有"
-  cities ||--o{ itineraries : "拥有"
-  cities ||--o{ kb_documents : "可选归属"
-  cities ||--o{ conversations : "可选关联"
+  cities ||--o{ pois : "city_id ON DELETE CASCADE"
+  cities ||--o{ itineraries : "city_id ON DELETE CASCADE"
+  cities ||--o{ kb_documents : "city_id ON DELETE SET NULL"
+  cities ||--o{ kb_chunks : "city_id ON DELETE SET NULL"
+  cities ||--o{ conversations : "city_id ON DELETE SET NULL"
 
-  pois ||--o{ pois : "parent_poi_id 机位挂靠"
-  kb_documents ||--|{ kb_chunks : "1:N 切分"
-  kb_chunks ||--|| kb_chunks_fts : "FTS 同步"
-  conversations ||--|{ conversation_messages : "1:N 消息"
+  pois ||--o{ pois : "parent_poi_id 自关联"
+  kb_documents ||--|{ kb_chunks : "document_id ON DELETE CASCADE"
+  kb_chunks ||--|| kb_chunks_fts : "chunk_id 同步索引"
+
+  users ||--o| user_memory : "user_id ON DELETE CASCADE"
+  users ||--o{ conversations : "user_id ON DELETE SET NULL"
+  conversations ||--|{ conversation_messages : "conversation_id ON DELETE CASCADE"
 
   cities {
     text id PK
@@ -131,15 +147,16 @@ erDiagram
     text province
     real center_lat
     real center_lng
-    json highlights
+    text highlights "JSON"
   }
 
   pois {
     text id PK
     text city_id FK
-    text category
+    text category "attraction|food|hotel|photo"
     text parent_poi_id FK
-    json capture_meta
+    text tags "JSON"
+    text capture_meta "JSON"
     real lat
     real lng
   }
@@ -148,37 +165,68 @@ erDiagram
     text id PK
     text city_id FK
     int days
-    json schedule
+    text schedule "JSON"
   }
 
   kb_documents {
     text id PK
-    text city_id FK
+    text city_id FK "nullable"
     text title
     text content
     text source
+    text created_at
+    text updated_at
   }
 
   kb_chunks {
     text id PK
     text document_id FK
-    text city_id FK
+    text city_id FK "nullable"
     int chunk_index
-    text embedding
+    text content
+    text embedding "JSON optional"
+  }
+
+  kb_chunks_fts {
+    text chunk_id "UNINDEXED"
+    text city_id "UNINDEXED"
+    text document_title
+    text content
+  }
+
+  users {
+    text id PK
+    text email UK
+    text google_sub UK
+    text display_name
+    text avatar_url
+    text created_at
+    text updated_at
+  }
+
+  user_memory {
+    text user_id PK_FK
+    text content_md
+    text updated_at
   }
 
   conversations {
     text id PK
+    text user_id FK "nullable 游客不落库"
     text city_id FK
     text title
+    text created_at
+    text updated_at
   }
 
   conversation_messages {
     text id PK
     text conversation_id FK
-    text role
-    int sort_order
-    json context_snapshot
+    text role "user|assistant"
+    text content
+    int sort_order "UK per conversation"
+    text created_at
+    text context_snapshot "JSON optional"
   }
 ```
 
@@ -243,12 +291,19 @@ erDiagram
 
 与 `kb_chunks` 同步写入，供 LIKE + 向量均无结果时的全文兜底检索。
 
+#### `users` / `user_memory` — 账号与旅行记忆
+
+| 表 | 说明 |
+|----|------|
+| `users` | Google `google_sub` / 邮箱唯一；dev-login 同样写入 |
+| `user_memory` | 每用户一条 `content_md`（规则抽取合并），聊天 prompt 注入 |
+
 #### `conversations` / `conversation_messages` — 对话持久化
 
 | 表 | 说明 |
 |----|------|
-| `conversations` | 会话头：`title`、`city_id`、时间戳 |
-| `conversation_messages` | 消息：`role`（user/assistant）、`content`、`sort_order`；可选 `context_snapshot` 存该轮上下文快照 |
+| `conversations` | 会话头：`user_id`（JWT 用户）、`title`、`city_id`、时间戳 |
+| `conversation_messages` | 消息：`role`（user/assistant）、`content`、`sort_order`（同窗内递增）；可选 `context_snapshot` 存该轮上下文快照 |
 
 ### 数据形成方式
 
@@ -259,9 +314,10 @@ erDiagram
 | `itineraries` | seed（`schedule` JSON） | — |
 | `kb_documents` | seed-data.kb.ts | `POST /api/travel/rag/documents` |
 | `kb_chunks` / `kb_chunks_fts` | 文档写入时自动切分 | 随文档 API 同步 |
-| `conversations` / `conversation_messages` | — | 聊天完成后 `appendExchange` |
+| `users` / `user_memory` | — | 登录 / 记忆 API、`streamTravelChat` 抽取 |
+| `conversations` / `conversation_messages` | — | 登录用户聊天完成后 `appendExchange` |
 
-维护流程：编辑 `backend/scripts/seed-data/` → `pnpm db:init` → 提交新的 `data/travel.db`。
+维护流程：编辑 `apps/backend/scripts/seed-data/` → `pnpm db:init` → 提交新的 `packages/data/travel.db`。
 
 ### 与 `TravelContext` 的映射
 
@@ -275,13 +331,88 @@ erDiagram
 
 当前预置规模（`db:init` 后）：**11 城 · 76 POI（含 11 机位）· 11 篇 KB 文档**。
 
+## 后端：用户问题 → 答案（总览）
+
+入口：`POST /api/travel/chat`（SSE）。实现主路径：`TravelController` → `TravelService.streamTravelChat`（`apps/backend/src/travel/travel.service.ts`）。
+
+```mermaid
+flowchart TD
+  IN[用户最后一轮 user 消息 + cityHint + 可选 conversationId / JWT] --> CTRL[TravelController.chat]
+  CTRL --> STREAM[TravelService.streamTravelChat]
+
+  STREAM --> SSE1[SSE: start + phase retrieving]
+  STREAM --> MEM{已登录?}
+  MEM -->|是| UM[AuthService.updateMemoryFromUserMessage]
+  MEM -->|否| LOOP
+  UM --> LOOP[TravelToolsService.runToolLoop]
+
+  subgraph LOOP_SUB[工具循环 · 拼 TravelContext]
+    LOOP --> CITY[resolveCityFromConversation]
+    LOOP --> PREFETCH[可选 RAG prefetch search_rag]
+    LOOP --> PLAN{TRAVEL_TOOL_PLANNER}
+    PLAN -->|rules 默认| RULES[planToolCalls 关键词意图 → 工具列表]
+    PLAN -->|agent| AGENT[cursor-agent JSON 多轮工具]
+    RULES --> EXEC[executeTravelTool → PoiService SQL]
+    AGENT --> EXEC
+    EXEC --> RAG[RagService.retrieveWithMeta<br/>LIKE + 分区向量 + FTS → RRF]
+    RAG --> CTX[TravelContext]
+    EXEC --> CTX
+  end
+
+  CTX --> SSE2[SSE: context 整包上下文给前端地图侧栏]
+  STREAM --> SSE3[SSE: phase generating]
+  SSE3 --> MODE{TRAVEL_ANSWER / MOCK_AGENT}
+  MODE -->|fallback 或 Agent 失败| FB[buildFallbackAnswer 本地 Markdown]
+  MODE -->|正常| PROMPT[buildTravelPrompt + 用户记忆 MD]
+  PROMPT --> CA[CursorAgentService.run 流式 delta]
+  FB --> DELTA[SSE: delta]
+  CA --> DELTA
+  DELTA --> SAVE{已登录?}
+  SAVE -->|是| DB[(ConversationService → SQLite)]
+  SAVE --> DONE
+  DB --> DONE[SSE: done answer + context + conversationId]
+```
+
+| 阶段 | 耗时特征 | 说明 |
+|------|-----------|------|
+| **检索** | 通常 <100ms（Mock/本地 TF-IDF） | 规则工具 + RAG 与 POI **并行编排**在 `runToolLoop` 内 |
+| **生成** | Mock 瞬时；真实 cursor-agent 数秒～分钟 | `sse.pushDelta` 增量；超时走 `buildFallbackAnswer` |
+| **落库** | 毫秒级 | 仅登录用户写 `conversations` / `conversation_messages` |
+
+更细的时序、RAG 子图见下文 [代码流程图](#代码流程图) §2–§4。
+
+### 分词 / 检索词策略
+
+RAG 链路统一走 **nodejieba**（`cutForSearch`，见 `apps/backend/src/travel/rag/jieba-segment.util.ts`）：
+
+| 环节 | 函数 | 策略 |
+|------|------|------|
+| 抽 **terms** | `extractSearchTerms` | `TRAVEL_KEYWORDS` + 结巴词（≥2 字）；最多 12 条 |
+| **LIKE / FTS / TF-IDF** | `tokenizeForSearch` / `formatTextForFtsIndex` / `buildFtsQuery` | 同一套结巴 token；FTS 入库为空格分隔词列（`unicode61`） |
+| 语义轨 | 可选 OpenAI embedding | `RAG_EMBEDDING_PROVIDER=openai` 时减轻对稀疏分词的依赖 |
+
+**改分词或 FTS 格式后请 `pnpm db:init` 并提交 `travel.db`**，否则旧索引与新区词不一致。
+
+**可考虑的更优方案（按投入递增）**
+
+| 方案 | 适用场景 | 权衡 |
+|------|-----------|------|
+| **领域词典** | 快速改进 | 扩充 `TRAVEL_KEYWORDS` + 同义词；与结巴叠加 |
+| **2–3 字 n-gram（仅向量路）** | 不配分词库的中间态 | 召回略好，索引变大 |
+| **查询改写** | 复杂多句问法 | 用小模型或规则把问句压成 keyword line 再检索；多一次 LLM 延迟 |
+| **Embedding 主检索** | 语义相近表述 | 已支持 OpenAI；本地可用 `@xenova/transformers` 等多语言句向量（需评估内存） |
+| **Cross-encoder 重排** | RRF 后 Top-K 再精排 | 质量提升明显，线上要多一跳推理 |
+| **迁 PG + `pg_trgm` / jieba 外挂 / pgvector** | 多实例、大库 | 与 [MONOREPO.md](docs/MONOREPO.md) 迁 PG 路线一致 |
+
+对本项目 demo 体量，**优先顺序**建议：词典扩展 → 打开 embedding（若有关键）→ 分词库或查询改写；全库变大再加重排与 PG。
+
 ## 代码流程图
 
 ### 1. 系统分层与模块依赖
 
 ```mermaid
 graph TB
-  subgraph Frontend["frontend/"]
+  subgraph Frontend["apps/frontend"]
     App[App.vue<br/>handleSubmit / SSE 消费]
     API_FE[api/travel.ts<br/>sendTravelChat / consumeTravelSse]
     Store[useTravelChat.ts<br/>状态：messages / context / city]
@@ -291,7 +422,7 @@ graph TB
     UI --> App
   end
 
-  subgraph Backend["backend/"]
+  subgraph Backend["apps/backend"]
     TC[TravelController<br/>chat / conversations / rag]
     TS[TravelService<br/>streamTravelChat]
     TT[TravelToolsService<br/>buildContext / planToolCalls]
@@ -496,7 +627,7 @@ sequenceDiagram
 | 服务 | `CityPartitionedVectorIndex` | `city-partitioned-vector-index.ts` | 按 city 分区 lazy build / 增量 rebuild |
 | 服务 | `run` | `cursor-agent.service.ts` | Mock 或 spawn cursor-agent |
 | 工具 | `createSseSession` | `sse.util.ts` | SSE 会话：心跳 + delta + 结束 |
-| 工具 | `init-travel-db` | `backend/scripts/init-travel-db.ts` | 从 seed-data 重新生成 travel.db（维护工具） |
+| 工具 | `init-travel-db` | `apps/backend/scripts/init-travel-db.ts` | 从 seed-data 重新生成 travel.db（维护工具） |
 | 工具 | `indexDocumentChunks` | `kb-index.util.ts` | 文档分块 + FTS 索引 |
 | 持久化 | `appendExchange` | `conversation.service.ts` | 保存一轮 user/assistant |
 
@@ -607,9 +738,9 @@ OpenAI embedding 调试路径（`?provider=openai`）在 SQL 层按 city 过滤�
 
 | 阶段 | 行为 |
 |------|------|
-| **仓库** | `data/travel.db` 已包含 11 城 POI + 知识库，提交到 Git |
+| **仓库** | `packages/data/travel.db` 已包含 11 城 POI + 知识库，提交到 Git |
 | **启动** | `DatabaseService` 只打开 DB，**不建表、不灌数据** |
-| **维护** | 改 `backend/scripts/seed-data/` → `pnpm db:init` → 提交新 db |
+| **维护** | 改 `apps/backend/scripts/seed-data/` → `pnpm db:init` → 提交新 db |
 | **文档 API** | `POST /api/travel/rag/documents` → 分块 + 增量 rebuild 向量分区 |
 | **删除** | `DELETE .../documents/:id` → 删除 chunk + FTS → 增量 rebuild 分区 |
 
@@ -654,9 +785,7 @@ SSE `context` 中的 `ragMeta` 便于调试与面试演示：
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| GET | `/api/health` | Agent 健康（含 `mockAgent`） |
-| POST | `/api/chat` | 通用聊天 SSE |
-| GET | `/api/travel/health` | 旅游模块 + RAG 统计 |
+| GET | `/api/travel/health` | 旅游模块 + RAG + cursor-agent 状态 |
 | GET | `/api/travel/cities` | 城市列表 |
 | GET | `/api/travel/rag/documents` | 知识库文档列表 |
 | POST | `/api/travel/chat` | 旅游聊天 SSE（POI + RAG） |
@@ -684,12 +813,12 @@ SSE `context` 中的 `ragMeta` 便于调试与面试演示：
 | `OPENAI_API_KEY` | — | OpenAI embedding（可选） |
 | `PORT` | 3000 | 监听端口 |
 | `HOST` | 127.0.0.1 | 监听地址 |
-| `CURSOR_AGENT_COMMAND` | cursor-agent | CLI 命令 |
+| `CURSOR_AGENT_COMMAND` | cursor-agent | CLI 可执行名或路径 |
 | `CURSOR_USE_API_KEY` | false | 是否使用 API Key |
 | `CURSOR_API_KEY` | — | API Key |
 | `CURSOR_TIMEOUT_MS` | 300000 | 总超时 |
 | `CURSOR_STALL_MS` | 45000 | 无输出超时 |
-| `TRAVEL_DB_PATH` | data/travel.db | SQLite 路径 |
+| `TRAVEL_DB_PATH` | packages/data/travel.db | SQLite 路径 |
 
 ## 测试
 
@@ -704,15 +833,15 @@ CI：`.github/workflows/ci.yml`（unit test + build + E2E）。
 
 - **SSE vs WebSocket**：单向 AI 流足够，SSE 更简单、易过 HTTP 代理
 - **LIKE 优先于 FTS**：中文短问句在 SQLite FTS 分词不稳定
-- **预置 SQLite**：POI/KB 数据在 `data/travel.db`，启动只连接不灌库；种子 TS 仅作维护脚本输入
+- **预置 SQLite**：POI/KB 数据在 `packages/data/travel.db`，启动只连接、不建表/不迁移；schema 变更靠 `db:init` + 提交 db
 - **向量按城市分区**：lazy build + 增量 rebuild，避免全国 chunk 全量扫描
 - **Mock 在 Agent 层**：POI/RAG 仍真实，保证 demo 与生产路径一致
 - **Agent 失败兜底**：`TravelService.buildFallbackAnswer` 仍可用本地 Markdown 回复
 
 ## 扩展指南
 
-1. **新增城市/POI**：编辑 `backend/scripts/seed-data/seed-data.cities.ts` → `pnpm db:init` → 提交 `data/travel.db`
-2. **新增 RAG 文档**：编辑 `backend/scripts/seed-data/seed-data.kb.ts` 后同上；或通过 `POST /api/travel/rag/documents` 运行时写入
+1. **新增城市/POI**：编辑 `apps/backend/scripts/seed-data/seed-data.cities.ts` → `pnpm db:init` → 提交 `packages/data/travel.db`
+2. **新增 RAG 文档**：编辑 `apps/backend/scripts/seed-data/seed-data.kb.ts` 后同上；或通过 `POST /api/travel/rag/documents` 运行时写入
 3. **换 LLM**：替换 `CursorAgentService.run`，SSE 层无需改动
 
-更详细的后端目录说明见 [backend/ARCHITECTURE.md](backend/ARCHITECTURE.md)。核心函数均含中文 JSDoc，可直接在 IDE 中 hover 查看。
+更详细的后端目录说明见 [apps/backend/ARCHITECTURE.md](apps/backend/ARCHITECTURE.md)。核心函数均含中文 JSDoc，可直接在 IDE 中 hover 查看。

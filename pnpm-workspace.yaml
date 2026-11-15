@@ -1,4 +1,14 @@
 packages:
-  - backend
-  - frontend
+  - apps/*
   - packages/*
+
+# 项目级 pnpm 配置（勿再写在 package.json 的 "pnpm" 字段）
+# https://pnpm.io/settings
+shamefullyHoist: true
+strictPeerDependencies: false
+
+# 允许执行 install / postinstall 原生构建的包（pnpm 默认会拦截其它依赖的生命周期脚本）
+onlyBuiltDependencies:
+  - better-sqlite3
+  - esbuild
+  - nodejieba

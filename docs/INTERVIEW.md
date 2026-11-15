@@ -24,16 +24,16 @@
 
 | 主题 | 路径 |
 |------|------|
-| Cookie / 登录 API | `backend/src/auth/auth.controller.ts` |
-| 记忆落库 | `backend/src/auth/auth.service.ts` → `updateMemoryFromUserMessage` |
-| 规则抽取 | `backend/src/travel/user-memory.util.ts` |
-| 聊天触发写入 | `backend/src/travel/travel.service.ts` → `streamTravelChat` |
-| 前端守卫 | `frontend/src/router/index.ts`、`composables/useAuth.ts` |
-| 顶栏账号 | `frontend/src/components/AppTopBar.vue` |
+| Cookie / 登录 API | `apps/backend/src/auth/auth.controller.ts` |
+| 记忆落库 | `apps/backend/src/auth/auth.service.ts` → `updateMemoryFromUserMessage` |
+| 规则抽取 | `apps/backend/src/travel/user-memory.util.ts` |
+| 聊天触发写入 | `apps/backend/src/travel/travel.service.ts` → `streamTravelChat` |
+| 前端守卫 | `apps/frontend/src/router/index.ts`、`composables/useAuth.ts` |
+| 顶栏账号 | `apps/frontend/src/components/AppTopBar.vue` |
 
 ### 环境变量（口述）
 
-- `GOOGLE_CLIENT_ID`、`JWT_SECRET`
+- 团队 `config/google-oauth.team.json`（公开 Client ID）或 `GOOGLE_CLIENT_ID`、`JWT_SECRET`（见 [GOOGLE_AUTH.md](./GOOGLE_AUTH.md)）
 - 国内开发：`AUTH_GOOGLE_INSECURE_LOCAL_JWT`（仅 dev 降级，生产必须 JWKS + 可选 `HTTPS_PROXY`）
 
 ---
@@ -48,7 +48,7 @@
 ### 部署要点（1 分钟）
 
 - `docker compose up` 或 Render 读 `render.yaml`；镜像内 `MOCK_AGENT=true`，无需 Cursor CLI。
-- 数据：Docker volume 持久化 `travel.db`；用户/记忆在运行时 migration 写入同一库。
+- 数据：Docker volume 持久化 `travel.db`；用户/记忆等表在 `db:init` 生成的 schema 中，运行时只读写。
 
 ### 演示脚本（建议练 3 分钟）
 

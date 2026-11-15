@@ -5,9 +5,9 @@ npm-debug.log
 .env
 *.md
 !README.md
-frontend/node_modules
-backend/dist
-backend/coverage
+apps/frontend/node_modules
+apps/backend/dist
+apps/backend/coverage
 data/*.db-shm
 data/*.db-wal
 .cursor
