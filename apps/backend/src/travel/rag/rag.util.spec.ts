@@ -5,8 +5,8 @@ import {
   extractSearchTerms,
   reciprocalRankFusion,
   rerankByLexicalOverlap,
-  tokenizeForSearch,
 } from "./rag.util";
+import { segmentTextToTokens } from "./jieba-segment.util";
 
 describe("rag.util", () => {
   describe("chunkText", () => {
@@ -73,18 +73,18 @@ describe("rag.util", () => {
     });
   });
 
-  describe("tokenizeForSearch", () => {
-    it("aligns FTS OR tokens with tokenizeForSearch(query)", () => {
+  describe("segmentTextToTokens", () => {
+    it("aligns FTS OR tokens with segmentTextToTokens(query)", () => {
       const query = "成都火锅推荐";
       const ftsTokens = buildFtsQuery(extractSearchTerms(query))?.split(" OR ") ?? [];
-      const tfidfTokens = tokenizeForSearch(query);
+      const tfidfTokens = segmentTextToTokens(query);
       for (const token of ftsTokens) {
         expect(tfidfTokens).toContain(token);
       }
     });
 
     it("segments Chinese with jieba words", () => {
-      const tokens = tokenizeForSearch("成都火锅");
+      const tokens = segmentTextToTokens("成都火锅");
       expect(tokens).toContain("成都");
       expect(tokens).toContain("火锅");
     });

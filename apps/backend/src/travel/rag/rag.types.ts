@@ -1,8 +1,8 @@
-import type { RagRetrieveMeta as SharedRagRetrieveMeta } from "@agent-starter/shared";
+import type { RagRetrieveMeta } from "@agent-starter/shared";
 
-export type RagRetrieveMethod = SharedRagRetrieveMeta["methods"][number];
+export type { RagRetrieveMeta };
 
-export type RagRetrieveMeta = SharedRagRetrieveMeta;
+export type RagRetrieveMethod = RagRetrieveMeta["methods"][number];
 
 export interface RagChunkResult {
   chunkId: string;

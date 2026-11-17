@@ -125,21 +125,15 @@ export function dispatchTravelSseMessage(
   if (!trimmed) return;
 
   const payload = JSON.parse(trimmed) as Record<string, unknown>;
-  const effectiveEvent =
-    event === "context"
-      ? event
-      : event === "message" && isTravelContextSsePayload(payload)
-        ? "context"
-        : event;
-  if (effectiveEvent === "start") handlers.onStart?.();
-  else if (effectiveEvent === "phase") {
+  if (event === "start") handlers.onStart?.();
+  else if (event === "phase") {
     const stage = (payload as { stage?: string }).stage;
     if (stage === "retrieving" || stage === "generating") handlers.onPhase?.(stage);
-  } else if (effectiveEvent === "context") handlers.onContext?.(payload as unknown as TravelContext);
-  else if (effectiveEvent === "delta") {
+  } else if (event === "context") handlers.onContext?.(payload as unknown as TravelContext);
+  else if (event === "delta") {
     flags.gotDelta.value = true;
     handlers.onDelta(String(payload.text ?? ""));
-  } else if (effectiveEvent === "done") {
+  } else if (event === "done") {
     flags.gotDone.value = true;
     handlers.onDone({
       answer: String(payload.answer ?? ""),
@@ -147,16 +141,7 @@ export function dispatchTravelSseMessage(
       fallback: Boolean(payload.fallback),
       conversationId: payload.conversationId ? String(payload.conversationId) : undefined,
     });
-  } else if (effectiveEvent === "error") {
+  } else if (event === "error") {
     handlers.onError(String(payload.error ?? "Unknown error."));
   }
-}
-
-function isTravelContextSsePayload(payload: Record<string, unknown>): boolean {
-  return (
-    typeof payload.city === "string" &&
-    typeof payload.cityName === "string" &&
-    Array.isArray(payload.pois) &&
-    Array.isArray(payload.toolCalls)
-  );
 }

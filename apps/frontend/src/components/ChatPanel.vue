@@ -14,6 +14,7 @@ const props = defineProps<{
   messages: ChatMessage[];
   streamingContent: string;
   isStreaming: boolean;
+  showStreamCursor?: boolean;
   statusText: string;
   statusVariant: StatusVariant;
   isSubmitting: boolean;
@@ -75,6 +76,7 @@ const statusTagType = computed(() => {
       :messages="messages"
       :streaming-content="streamingContent"
       :is-streaming="isStreaming"
+      :show-stream-cursor="showStreamCursor ?? false"
       :streaming-status="isStreaming ? statusText : ''"
     />
 

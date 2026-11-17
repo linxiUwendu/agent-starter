@@ -41,7 +41,7 @@ async function main() {
       console.warn(`Skip ${row.id}: embedding failed`);
       continue;
     }
-    update.run(embedding.serializeEmbedding(vector), row.id);
+    update.run(JSON.stringify(vector), row.id);
     done += 1;
     if (done % 5 === 0) console.log(`  ${done}/${rows.length}`);
   }

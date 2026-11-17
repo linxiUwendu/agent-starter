@@ -388,7 +388,7 @@ RAG 链路统一走 **nodejieba**（`cutForSearch`，见 `apps/backend/src/trave
 | 环节 | 函数 | 策略 |
 |------|------|------|
 | 抽 **terms** | `extractSearchTerms` | `TRAVEL_KEYWORDS` + 结巴词（≥2 字）；最多 12 条 |
-| **LIKE / FTS / TF-IDF** | `tokenizeForSearch` / `formatTextForFtsIndex` / `buildFtsQuery` | 同一套结巴 token；FTS 入库为空格分隔词列（`unicode61`） |
+| **LIKE / FTS / TF-IDF** | `segmentTextToTokens` / `formatTextForFtsIndex` / `buildFtsQuery` | 同一套结巴 token；FTS 入库为空格分隔词列（`unicode61`） |
 | 语义轨 | 可选 OpenAI embedding | `RAG_EMBEDDING_PROVIDER=openai` 时减轻对稀疏分词的依赖 |
 
 **改分词或 FTS 格式后请 `pnpm db:init` 并提交 `travel.db`**，否则旧索引与新区词不一致。

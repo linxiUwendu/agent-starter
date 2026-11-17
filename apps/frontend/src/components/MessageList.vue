@@ -8,6 +8,8 @@ const props = defineProps<{
   messages: ChatMessage[];
   streamingContent: string;
   isStreaming: boolean;
+  /** 打字机揭示中或等待更多 SSE 时在文末显示闪烁光标 */
+  showStreamCursor?: boolean;
   /** 生成阶段提示（检索 / 思考），显示在助手气泡内 */
   streamingStatus?: string;
 }>();
@@ -132,7 +134,7 @@ onMounted(() => {
             </template>
             <template v-else>
               <span class="stream-text">{{ streamingContent }}</span>
-              <span class="stream-cursor" aria-hidden="true" />
+              <span v-if="showStreamCursor" class="stream-cursor" aria-hidden="true" />
             </template>
           </div>
         </div>

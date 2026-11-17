@@ -1,6 +1,7 @@
 import type Database from "better-sqlite3";
 
-import { chunkText, formatTextForFtsIndex } from "../rag/rag.util";
+import { formatTextForFtsIndex } from "../rag/jieba-segment.util";
+import { chunkText } from "../rag/rag.util";
 
 export interface KbDocumentRecord {
   id: string;

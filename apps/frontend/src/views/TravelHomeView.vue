@@ -17,14 +17,25 @@ import ItineraryPanel from "../components/ItineraryPanel.vue";
 import MapPanel from "../components/MapPanel.vue";
 import { useAuth } from "../composables/useAuth";
 import { useKbAdmin } from "../composables/useKbAdmin";
+import { useStreamTypewriter } from "../composables/useStreamTypewriter";
 import { useTravelChat } from "../composables/useTravelChat";
 import type { ConversationSummary, StatusVariant } from "../types/travel";
 
 const statusText = ref("Ready");
 const statusVariant = ref<StatusVariant>("");
-const streamingContent = ref("");
-const isStreaming = ref(false);
 const isSubmitting = ref(false);
+const streamTypewriter = useStreamTypewriter();
+const streamingContent = computed(() => streamTypewriter.displayed.value);
+const isStreaming = computed(
+  () => isSubmitting.value || streamTypewriter.sessionOpen.value || streamTypewriter.isRevealing.value,
+);
+/** 已收到正文且仍在输出或等待更多 delta 时显示光标 */
+const showStreamCursor = computed(
+  () =>
+    isSubmitting.value &&
+    streamingContent.value.length > 0 &&
+    (streamTypewriter.isRevealing.value || streamTypewriter.sessionOpen.value),
+);
 const conversations = ref<ConversationSummary[]>([]);
 const conversationsLoading = ref(false);
 const { isKbAdmin, consumeUrlUnlock, refreshAdminConfig } = useKbAdmin();
@@ -153,8 +164,7 @@ async function handleSubmit(content: string) {
   }
 
   isSubmitting.value = true;
-  isStreaming.value = true;
-  streamingContent.value = "";
+  streamTypewriter.begin();
   setStatus("正在连接…", "streaming");
 
   activeStream = new AbortController();
@@ -189,10 +199,10 @@ async function handleSubmit(content: string) {
         setStatus(`生成${context.cityName}攻略中…`, "streaming");
       },
       onDelta(text) {
-        streamingContent.value += text;
+        streamTypewriter.push(text);
       },
       onDone(payload) {
-        streamingContent.value = payload.answer || streamingContent.value;
+        if (payload.answer) streamTypewriter.replaceAll(payload.answer);
         if (payload.context) {
           setContext(payload.context);
           if (payload.context.city) void syncCitySideEffects(payload.context.city);
@@ -210,15 +220,19 @@ async function handleSubmit(content: string) {
       },
     });
 
-    const answer = streamingContent.value.trim();
+    await streamTypewriter.endSession();
+
+    const answer = streamTypewriter.source.value.trim();
     if (!answer) throw new Error("Empty response from server.");
 
     appendMessage({ role: "assistant", content: answer });
     setStatus("Ready");
   } catch (error) {
     if (error instanceof DOMException && error.name === "AbortError") {
-      if (streamingContent.value.trim()) {
-        appendMessage({ role: "assistant", content: streamingContent.value });
+      streamTypewriter.snapToSource();
+      const partial = streamTypewriter.source.value.trim();
+      if (partial) {
+        appendMessage({ role: "assistant", content: partial });
       }
       setStatus("已停止");
     } else {
@@ -227,8 +241,7 @@ async function handleSubmit(content: string) {
       setStatus("Error", "error");
     }
   } finally {
-    isStreaming.value = false;
-    streamingContent.value = "";
+    streamTypewriter.reset();
     isSubmitting.value = false;
     activeStream = null;
   }
@@ -268,6 +281,7 @@ onMounted(async () => {
         :messages="messages"
         :streaming-content="streamingContent"
         :is-streaming="isStreaming"
+        :show-stream-cursor="showStreamCursor"
         :status-text="statusText"
         :status-variant="statusVariant"
         :is-submitting="isSubmitting"

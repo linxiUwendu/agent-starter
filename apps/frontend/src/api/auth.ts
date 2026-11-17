@@ -1,6 +1,4 @@
-import type { AuthConfig, AuthUser, UserMemoryContent } from "@agent-starter/shared";
-
-export type { AuthConfig, AuthUser };
+import type { AuthConfig, UserMemoryContent } from "@agent-starter/shared";
 
 const jsonHeaders = { "Content-Type": "application/json" };
 

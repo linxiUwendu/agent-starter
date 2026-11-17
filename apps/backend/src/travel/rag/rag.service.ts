@@ -295,7 +295,7 @@ export class RagService implements OnModuleInit {
       if (!vector) continue;
       this.kb.updateChunkEmbedding(
         chunk.id,
-        this.embeddingService.serializeEmbedding(vector),
+        JSON.stringify(vector),
       );
       done += 1;
     }

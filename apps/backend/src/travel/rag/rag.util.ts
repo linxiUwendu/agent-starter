@@ -1,4 +1,4 @@
-import { formatTextForFtsWithJieba, segmentTextToTokens } from "./jieba-segment.util";
+import { segmentTextToTokens } from "./jieba-segment.util";
 
 const CHUNK_SIZE = 380;
 const CHUNK_OVERLAP = 60;
@@ -140,13 +140,6 @@ function cleanSearchTerm(term: string): string {
   return term.replace(/["']/g, "").trim();
 }
 
-/**
- * @description TF-IDF 与 FTS 共用jieba cutForSearch 分词。
- */
-export function tokenizeForSearch(text: string): string[] {
-  return segmentTextToTokens(text);
-}
-
 const TRAVEL_KEYWORDS = [
   "火锅",
   "美食",
@@ -193,11 +186,6 @@ export function extractSearchTerms(message: string): string[] {
   }
 
   return [...terms].slice(0, 12);
-}
-
-/** @description 写入 FTS5 前：结巴分词后以空格连接，适配 unicode61 */
-export function formatTextForFtsIndex(text: string): string {
-  return formatTextForFtsWithJieba(text);
 }
 
 /**

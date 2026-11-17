@@ -1,4 +1,4 @@
-import { tokenizeForSearch } from "./rag.util";
+import { segmentTextToTokens } from "./jieba-segment.util";
 
 export interface VectorDocument {
   id: string;
@@ -14,7 +14,7 @@ export interface VectorDocument {
 function buildIdf(docs: VectorDocument[]): Map<string, number> {
   const docFreq = new Map<string, number>();
   for (const doc of docs) {
-    const seen = new Set(tokenizeForSearch(doc.content));
+    const seen = new Set(segmentTextToTokens(doc.content));
     for (const token of seen) {
       docFreq.set(token, (docFreq.get(token) ?? 0) + 1);
     }
@@ -91,7 +91,7 @@ export class VectorIndex {
     this.vectors.clear();
 
     for (const doc of docs) {
-      const tokens = tokenizeForSearch(doc.content);
+      const tokens = segmentTextToTokens(doc.content);
       this.vectors.set(doc.id, buildTfidfVector(tokens, this.idf));
     }
   }
@@ -111,7 +111,7 @@ export class VectorIndex {
   searchUnscoped(query: string, limit: number) {
     if (this.docs.length === 0 || limit <= 0) return [];
 
-    const queryVector = buildTfidfVector(tokenizeForSearch(query), this.idf); // query TF-IDF
+    const queryVector = buildTfidfVector(segmentTextToTokens(query), this.idf); // query TF-IDF
     const scored: Array<{ id: string; score: number }> = [];
 
     for (const doc of this.docs) {

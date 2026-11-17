@@ -79,7 +79,7 @@ const MERGE_HANDLERS: Record<
 };
 
 /** 各工具的调用与结果合并配置（单一数据源） */
-const TRAVEL_TOOL_REGISTRY: Record<TravelToolName, TravelToolRegistryEntry> = {
+export const TRAVEL_TOOL_REGISTRY: Record<TravelToolName, TravelToolRegistryEntry> = {
   search_poi: {
     merge: "pois",
     execute: (deps, args) => deps.poiService.searchPoi(normalizeArgs(args) as SearchPoiParams),
@@ -134,8 +134,4 @@ export function mergeTravelToolResult(
   const count = MERGE_HANDLERS[merge](context, result);
   context.toolCalls.push({ name, args, resultCount: count });
   return count;
-}
-
-export function getToolMergeStrategy(name: TravelToolName): ToolMergeStrategy {
-  return TRAVEL_TOOL_REGISTRY[name].merge;
 }

@@ -62,7 +62,7 @@ describe("travel SSE consume (frontend parity)", () => {
     expect(gotContext).toBe(true);
   });
 
-  it("recognizes orphan context data without event line", () => {
+  it("parses context when frames use CRLF", () => {
     const state = createSseFeedState();
     let gotContext = false;
     const handlers = {
@@ -73,7 +73,9 @@ describe("travel SSE consume (frontend parity)", () => {
     };
     const ctx =
       '{"city":"chengdu","cityName":"成都","pois":[],"photoSpots":[],"toolCalls":[],"ragChunks":[]}';
-    expect(feedTravelSseChunk(state, `data: ${ctx}\n\n`, handlers)).toBe("ok");
+    expect(
+      feedTravelSseChunk(state, `event: context\r\ndata: ${ctx}\r\n\r\n`, handlers),
+    ).toBe("ok");
     expect(gotContext).toBe(true);
   });
 });

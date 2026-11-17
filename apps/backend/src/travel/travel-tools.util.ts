@@ -1,5 +1,5 @@
 import { TRAVEL_TOOLS, type TravelToolName } from "./travel.constants";
-import { getToolMergeStrategy } from "./travel-tool.registry";
+import { TRAVEL_TOOL_REGISTRY } from "./travel-tool.registry";
 
 export type AgentToolCall = {
   name: TravelToolName;
@@ -198,7 +198,7 @@ export function mockAgentToolStep(
 export function summarizeToolResult(name: TravelToolName, result: unknown): string {
   if (result == null) return "无结果";
 
-  switch (getToolMergeStrategy(name)) {
+  switch (TRAVEL_TOOL_REGISTRY[name].merge) {
     case "rag": {
       const rag = result as { chunks?: Array<{ documentTitle?: string }> };
       const chunks = rag.chunks ?? [];

@@ -36,7 +36,7 @@ export function segmentTextToTokens(text: string): string[] {
 }
 
 /** FTS5 unicode61：将正文切成空格分隔的词序列写入倒排索引 */
-export function formatTextForFtsWithJieba(text: string): string {
+export function formatTextForFtsIndex(text: string): string {
   const trimmed = text.trim();
   if (!trimmed) return "";
 

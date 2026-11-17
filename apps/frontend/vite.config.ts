@@ -30,7 +30,6 @@ export default defineConfig(({ mode }) => {
               proxyRes.headers["cache-control"] = "no-cache, no-transform";
               proxyRes.headers["x-accel-buffering"] = "no";
               delete proxyRes.headers["content-length"];
-              delete proxyRes.headers["content-encoding"];
             });
           },
         },

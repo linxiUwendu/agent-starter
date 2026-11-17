@@ -112,14 +112,12 @@ export function applyMemoryPatch(existingMd: string, userText: string): string {
     const additions = patch[key];
     if (!additions?.length) continue;
     const list = sections[key];
-    const seen = new Set(list);
     for (const item of additions) {
       const norm = item.trim();
-      if (!norm || seen.has(norm)) continue;
-      seen.add(norm);
+      if (!norm || list.includes(norm)) continue;
       list.push(norm);
       while (list.length > MAX_SECTION_ITEMS) {
-        seen.delete(list.shift()!);
+        list.shift();
       }
     }
   }

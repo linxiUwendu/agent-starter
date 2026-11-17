@@ -83,11 +83,4 @@ export class EmbeddingService {
     }
   }
 
-  /**
-   * @description 将向量序列化为 JSON 字符串以便存入 SQLite。
-   * @param values embedding 浮点数组
-   */
-  serializeEmbedding(values: number[]): string {
-    return JSON.stringify(values);
-  }
 }

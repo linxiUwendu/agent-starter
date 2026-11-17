@@ -14,8 +14,6 @@ import {
 } from "./travel-sse-parse";
 import type { TravelSseHandlers } from "./travel-sse.types";
 
-export type { TravelSseHandlers };
-
 const STREAM_IDLE_TIMEOUT_MS = 300_000;
 
 /**

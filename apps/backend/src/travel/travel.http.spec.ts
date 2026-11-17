@@ -3,12 +3,6 @@ import cookieParser from "cookie-parser";
 import type { INestApplication } from "@nestjs/common";
 import request from "supertest";
 
-import {
-  createSseFeedState,
-  feedTravelSseChunk,
-  flushTravelSseBuffer,
-} from "../../../../apps/frontend/src/api/travel-sse-parse";
-
 import { AppModule } from "../app.module";
 import { createValidationPipe } from "../common/create-validation-pipe";
 
@@ -109,35 +103,6 @@ describe("Travel HTTP (integration)", () => {
       const doneIdx = body.indexOf("event: done");
       expect(contextIdx).toBeGreaterThanOrEqual(0);
       expect(doneIdx).toBeGreaterThan(contextIdx);
-
-      const fired: string[] = [];
-      const state = createSseFeedState();
-      const handlers = {
-        onContext: () => fired.push("context"),
-        onDelta: () => fired.push("delta"),
-        onDone: () => fired.push("done"),
-        onError: (msg: string) => {
-          throw new Error(msg);
-        },
-      };
-      expect(feedTravelSseChunk(state, body, handlers)).toBe("ok");
-      flushTravelSseBuffer(state, handlers);
-      expect(fired).toContain("context");
-
-      const crlfState = createSseFeedState();
-      const crlfFired: string[] = [];
-      const crlfHandlers = {
-        onContext: () => crlfFired.push("context"),
-        onDelta: () => {},
-        onDone: () => {},
-        onError: (msg: string) => {
-          throw new Error(msg);
-        },
-      };
-      const crlfBody = body.replace(/\n/g, "\r\n");
-      expect(feedTravelSseChunk(crlfState, crlfBody, crlfHandlers)).toBe("ok");
-      flushTravelSseBuffer(crlfState, crlfHandlers);
-      expect(crlfFired).toContain("context");
     },
     120_000,
   );

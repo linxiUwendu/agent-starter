@@ -1,7 +1,8 @@
 import Database from "better-sqlite3";
 
 import { SCHEMA_SQL } from "../travel/database/schema";
-import { chunkText, formatTextForFtsIndex } from "../travel/rag/rag.util";
+import { formatTextForFtsIndex } from "../travel/rag/jieba-segment.util";
+import { chunkText } from "../travel/rag/rag.util";
 
 /** 内存 SQLite，供 RAG / 工具链单测使用 */
 export function createTestDatabase(): Database.Database {
